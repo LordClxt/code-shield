@@ -41,7 +41,18 @@ compose.desktop {
 
             // Icône d'app (le d-bouclier) : générée depuis le logo officiel.
             macOS { iconFile.set(project.file("icons/CodeShield.icns")) }
-            windows { iconFile.set(project.file("icons/CodeShield.ico")) }
+            windows {
+                iconFile.set(project.file("icons/CodeShield.ico"))
+                // Sans ces options, le .msi installe l'app sans aucun raccourci : rien dans
+                // le menu Démarrer ni sur le Bureau.
+                menu = true
+                menuGroup = "CodeShield"
+                shortcut = true
+                dirChooser = true
+                // Fixe : permet à une nouvelle version de remplacer l'ancienne au lieu de
+                // s'installer à côté. Ne jamais changer.
+                upgradeUuid = "2F282675-B700-49C6-9191-9CEED925A243"
+            }
             linux { iconFile.set(project.file("icons/CodeShield.png")) }
         }
     }
