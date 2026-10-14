@@ -10,14 +10,16 @@ const root = resolve(import.meta.dir, 'dist/client')
 const port = Number(process.env.PORT ?? 3000)
 // Installeurs de l'app desktop (hors build : déposés par desktop/scripts/package-installer.sh ou montés en volume).
 const downloadsDir = resolve(process.env.DOWNLOADS_DIR ?? resolve(import.meta.dir, 'downloads'))
+// Installeur absent en local : redirection vers la dernière release GitHub (publiée par la CI sur tag vX.Y.Z).
+const releasesUrl = (process.env.DOWNLOADS_FALLBACK_URL ?? 'https://github.com/LordClxt/code-shield/releases/latest/download').replace(/\/$/, '')
 const INSTALLER = /^\/downloads\/(CodeShield-(?:macos\.dmg|windows\.msi|linux\.deb))$/
 
-/** Installeur demandé : liste fermée de noms, servi en pièce jointe. */
+/** Installeur demandé : liste fermée de noms, servi en pièce jointe (sinon redirigé vers la release). */
 async function installer(pathname: string): Promise<Response | null> {
   const name = INSTALLER.exec(pathname)?.[1]
   if (!name) return null
   const file = Bun.file(resolve(downloadsDir, name))
-  if (!(await file.exists())) return new Response('Installeur pas encore publié.', { status: 404 })
+  if (!(await file.exists())) return Response.redirect(`${releasesUrl}/${name}`, 302)
   return new Response(file, {
     headers: {
       'Content-Type': 'application/octet-stream',
