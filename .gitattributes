@@ -1,0 +1,6 @@
+* text=auto
+# Scripts lancés par bash, y compris sur le runner Windows de la CI : toujours LF.
+*.sh text eol=lf
+gradlew text eol=lf
+# Scripts Windows : CRLF.
+*.bat text eol=crlf

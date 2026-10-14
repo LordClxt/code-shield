@@ -1,0 +1,14 @@
+{
+  "name": "codeshield-landing-films",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preview": "HYPERFRAMES_NO_TELEMETRY=1 hyperframes preview",
+    "lint": "HYPERFRAMES_NO_TELEMETRY=1 hyperframes lint",
+    "render": "node render.mjs"
+  },
+  "devDependencies": {
+    "gsap": "3.15.0",
+    "hyperframes": "0.8.93"
+  }
+}

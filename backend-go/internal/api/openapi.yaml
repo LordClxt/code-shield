@@ -1,0 +1,663 @@
+openapi: 3.1.0
+info:
+  title: CodeShield API
+  version: 2.0.0
+  description: |
+    Contrat unique entre le backend Go, le desktop Kotlin et le front-end TanStack.
+    Règle absolue : aucun code source ne transite. Les findings ne portent que des
+    métadonnées de positionnement et des empreintes sha256.
+
+    Les agents IA (Claude Code…) utilisent `/api/v1/issues` ou le serveur MCP `/mcp`
+    avec une clé `csk_` portant les scopes `issues:read` / `issues:write`.
+servers:
+  - url: http://localhost:8000
+security:
+  - bearer: []
+tags:
+  - name: auth
+  - name: projects
+  - name: sync
+  - name: keys
+  - name: issues
+    description: API orientée agents IA (lecture des failles + guidance + changement de statut).
+
+paths:
+  /health:
+    get:
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  version: { type: string }
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: Créé
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "200":
+          description: Jeton JWT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Token" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      responses:
+        "200":
+          description: Utilisateur courant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      responses:
+        "200":
+          description: Projets de l'utilisateur
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Project" }
+    post:
+      tags: [projects]
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectCreate" }
+      responses:
+        "201":
+          description: Créé
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /api/v1/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: getProject
+      responses:
+        "200":
+          description: Projet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      responses:
+        "204": { description: Supprimé }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/projects/{projectId}/vulnerabilities:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: listProjectVulnerabilities
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/VulnStatus" }
+        - name: severity
+          in: query
+          schema: { $ref: "#/components/schemas/Severity" }
+      responses:
+        "200":
+          description: Failles du projet
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Vulnerability" }
+
+  /api/v1/projects/{projectId}/scans:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: listScans
+      responses:
+        "200":
+          description: 50 derniers scans
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scan" }
+
+  /api/v1/projects/{projectId}/metrics:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: getProjectMetrics
+      responses:
+        "200":
+          description: Score et compteurs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectMetrics" }
+
+  /api/v1/projects/{projectId}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: getProjectTimeline
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: Nouvelles vs corrigées par jour (UTC)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TimelinePoint" }
+
+  /api/v1/sync/submit:
+    post:
+      tags: [sync]
+      operationId: submitSync
+      description: |
+        Moteur différentiel. Authentification : JWT ou clé `csk_` avec le scope `sync:write`.
+        Tout champ hors contrat (ex. `snippet`, `source_code`) est rejeté en 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SyncSubmitRequest" }
+      responses:
+        "200":
+          description: Résultat du diff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncSubmitResponse" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /api/v1/keys:
+    get:
+      tags: [keys]
+      operationId: listApiKeys
+      responses:
+        "200":
+          description: Clés (jamais le secret)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiKey" }
+    post:
+      tags: [keys]
+      operationId: createApiKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiKeyCreate" }
+      responses:
+        "201":
+          description: Clé créée ; `plain_key` n'est retourné qu'une seule fois
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyCreated" }
+
+  /api/v1/keys/{keyId}:
+    delete:
+      tags: [keys]
+      operationId: revokeApiKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "204": { description: Révoquée }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/issues:
+    get:
+      tags: [issues]
+      operationId: listIssues
+      description: Failles de tous les projets, les plus graves d'abord. Scope `issues:read`.
+      parameters:
+        - { name: project_id, in: query, schema: { type: integer, format: int64 } }
+        - name: status
+          in: query
+          description: CSV ou paramètre répété
+          schema: { type: string, example: "OPEN,REOPENED" }
+        - { name: severity, in: query, schema: { type: string, example: "CRITICAL,HIGH" } }
+        - { name: tool, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: file_prefix, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Page d'issues
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssuePage" }
+
+  /api/v1/issues/{issueId}:
+    parameters:
+      - name: issueId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [issues]
+      operationId: getIssue
+      description: Faille + `fix_context` (fichier, lignes, CWE, guidance, étapes agent). Scope `issues:read`.
+      responses:
+        "200":
+          description: Détail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [issues]
+      operationId: updateIssueStatus
+      description: |
+        Scope `issues:write`. Transitions : OPEN, IN_PROGRESS, FIXED_PENDING_VERIFY, IGNORED (note ≥ 10 caractères).
+        RESOLVED est réservé aux sessions humaines ; REOPENED au moteur de synchro (409 sinon).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StatusUpdate" }
+      responses:
+        "200":
+          description: Détail mis à jour
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/issues/bulk:
+    post:
+      tags: [issues]
+      operationId: bulkUpdateIssues
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkStatusUpdate" }
+      responses:
+        "200":
+          description: Ids modifiés
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated:
+                    type: array
+                    items: { type: integer, format: int64 }
+        "409": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: JWT de session, ou clé API `csk_…` (routes sync et issues uniquement).
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    Error:
+      description: Erreur
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [detail]
+            properties:
+              detail: { type: string }
+    Validation:
+      description: Erreur de validation
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [detail]
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    loc: { type: array, items: {} }
+                    msg: { type: string }
+
+  schemas:
+    Severity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW]
+    ToolName:
+      type: string
+      enum: [SEMGREP, GITLEAKS, DEPENDENCY_CHECK, TRIVY, BANDIT, OSV_SCANNER, CHECKOV]
+    Category:
+      type: string
+      enum: [SAST, SECRET, SCA, IAC]
+    VulnStatus:
+      type: string
+      enum: [OPEN, IN_PROGRESS, FIXED_PENDING_VERIFY, RESOLVED, IGNORED, REOPENED]
+    Scope:
+      type: string
+      enum: ["sync:write", "issues:read", "issues:write"]
+
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 128 }
+    Token:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: bearer }
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: integer, format: int64 }
+        email: { type: string }
+
+    ProjectCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        repo_url: { type: [string, "null"], maxLength: 500 }
+    Project:
+      type: object
+      required: [id, name, repo_url, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        repo_url: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+    ProjectMetrics:
+      type: object
+      required: [project_id, score, grade, open_counts, resolved_count, ignored_count, total_scans]
+      properties:
+        project_id: { type: integer, format: int64 }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        grade: { type: string, enum: [A, B, C, D, F] }
+        open_counts: { $ref: "#/components/schemas/SeverityCounts" }
+        resolved_count: { type: integer }
+        ignored_count: { type: integer }
+        total_scans: { type: integer }
+    SeverityCounts:
+      type: object
+      required: [CRITICAL, HIGH, MEDIUM, LOW]
+      properties:
+        CRITICAL: { type: integer }
+        HIGH: { type: integer }
+        MEDIUM: { type: integer }
+        LOW: { type: integer }
+    TimelinePoint:
+      type: object
+      required: [date, opened, resolved]
+      properties:
+        date: { type: string, format: date }
+        opened: { type: integer }
+        resolved: { type: integer }
+    Scan:
+      type: object
+      required: [id, project_id, findings_count, commit_sha, branch, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64 }
+        findings_count: { type: integer }
+        commit_sha: { type: [string, "null"] }
+        branch: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    Finding:
+      type: object
+      additionalProperties: false
+      description: |
+        Métadonnées d'une détection. `fingerprint` = sha256 hex de
+        "tool|rule_id|file_path|<ligne normalisée>|<occurrence>|<sel projet>", calculé
+        localement : le texte de la ligne n'est jamais envoyé.
+      required: [tool, rule_id, file_path, line_number, severity, title]
+      properties:
+        tool: { $ref: "#/components/schemas/ToolName" }
+        rule_id: { type: string, minLength: 1, maxLength: 320 }
+        file_path: { type: string, minLength: 1, maxLength: 1024 }
+        line_number: { type: integer, minimum: 1, maximum: 10000000 }
+        end_line: { type: integer, minimum: 1 }
+        column: { type: integer, minimum: 1 }
+        end_column: { type: integer, minimum: 1 }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        message: { type: [string, "null"], maxLength: 5000 }
+        category: { $ref: "#/components/schemas/Category" }
+        cwe:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: "^CWE-[0-9]{1,6}$" }
+        owasp:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 120 }
+        remediation_key: { type: string, maxLength: 200 }
+        package: { type: string, maxLength: 500 }
+        installed_version: { type: string, maxLength: 200 }
+        fixed_version: { type: string, maxLength: 200 }
+        fingerprint: { type: string, pattern: "^[0-9a-f]{64}$" }
+    SyncSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, findings]
+      properties:
+        project_id: { type: integer, format: int64 }
+        commit_sha: { type: string, pattern: "^[0-9a-fA-F]{7,64}$" }
+        branch: { type: string, maxLength: 255 }
+        findings:
+          type: array
+          maxItems: 5000
+          items: { $ref: "#/components/schemas/Finding" }
+    SyncSubmitResponse:
+      type: object
+      required: [scan_id, created, touched, resolved, reopened, open_total, open_counts, score, grade]
+      properties:
+        scan_id: { type: integer, format: int64 }
+        created: { type: integer }
+        touched: { type: integer }
+        resolved: { type: integer }
+        reopened: { type: integer }
+        open_total: { type: integer }
+        open_counts: { $ref: "#/components/schemas/SeverityCounts" }
+        score: { type: integer }
+        grade: { type: string, enum: [A, B, C, D, F] }
+
+    Vulnerability:
+      type: object
+      required: [id, project_id, tool, rule_id, file_path, line_number, severity, title, category, cwe, owasp, status, first_seen, last_seen]
+      properties:
+        id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64 }
+        last_scan_id: { type: [integer, "null"], format: int64 }
+        tool: { $ref: "#/components/schemas/ToolName" }
+        rule_id: { type: string }
+        file_path: { type: string }
+        line_number: { type: integer }
+        end_line: { type: [integer, "null"] }
+        column: { type: [integer, "null"] }
+        end_column: { type: [integer, "null"] }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string }
+        message: { type: [string, "null"] }
+        category: { $ref: "#/components/schemas/Category" }
+        cwe: { type: array, items: { type: string } }
+        owasp: { type: array, items: { type: string } }
+        remediation_key: { type: [string, "null"] }
+        package: { type: [string, "null"] }
+        installed_version: { type: [string, "null"] }
+        fixed_version: { type: [string, "null"] }
+        fingerprint: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/VulnStatus" }
+        first_seen: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
+        resolved_by: { type: [string, "null"] }
+        resolution_note: { type: [string, "null"] }
+    Issue:
+      allOf:
+        - $ref: "#/components/schemas/Vulnerability"
+        - type: object
+          required: [project_name]
+          properties:
+            project_name: { type: string }
+    IssuePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        next_cursor: { type: [string, "null"] }
+    Guidance:
+      type: object
+      required: [category, what, why, fix, references]
+      properties:
+        category: { type: string }
+        what: { type: string }
+        why: { type: string }
+        fix: { type: array, items: { type: string } }
+        references: { type: array, items: { type: string, format: uri } }
+    FixContext:
+      type: object
+      required: [file_path, line_start, line_end, severity_blurb, cwe, guidance, agent_steps]
+      properties:
+        file_path: { type: string }
+        line_start: { type: integer }
+        line_end: { type: integer }
+        column: { type: [integer, "null"] }
+        end_column: { type: [integer, "null"] }
+        severity_blurb: { type: string }
+        cwe: { type: array, items: { type: string } }
+        guidance: { $ref: "#/components/schemas/Guidance" }
+        agent_steps: { type: array, items: { type: string } }
+    IssueDetail:
+      allOf:
+        - $ref: "#/components/schemas/Issue"
+        - type: object
+          required: [fix_context]
+          properties:
+            fix_context: { $ref: "#/components/schemas/FixContext" }
+    StatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/VulnStatus" }
+        note: { type: [string, "null"], maxLength: 2000 }
+    BulkStatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [ids, status]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: integer, format: int64 }
+        status: { $ref: "#/components/schemas/VulnStatus" }
+        note: { type: [string, "null"], maxLength: 2000 }
+
+    ApiKeyCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        scopes:
+          type: array
+          description: Défaut `["sync:write"]`.
+          items: { $ref: "#/components/schemas/Scope" }
+        project_id: { type: [integer, "null"], format: int64, description: Restreint la clé à un projet. }
+    ApiKey:
+      type: object
+      required: [id, name, prefix, scopes, project_id, revoked, last_used_at, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        prefix: { type: string }
+        scopes: { type: array, items: { $ref: "#/components/schemas/Scope" } }
+        project_id: { type: [integer, "null"], format: int64 }
+        revoked: { type: boolean }
+        last_used_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    ApiKeyCreated:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          required: [plain_key]
+          properties:
+            plain_key: { type: string }

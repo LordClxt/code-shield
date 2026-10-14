@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>CodeShield — Claude Code corrige, le scan vérifie</title>
+    <!--
+      Film 3 · « Claude Code corrige, le scan vérifie » (12 s, boucle).
+        0.0–1.1   terminal (gauche), fichier et fiche de la faille (droite)
+        0.9–2.6   la consigne se tape, caractère par caractère (horaire fixe)
+        2.9–5.0   appels MCP : list_issues, get_issue
+        5.1–6.4   Edit : la ligne fautive est barrée, la requête paramétrée s'insère
+        6.5–7.3   mark_issue_fixed : « Ouverte » → « Corrigée, à vérifier »
+        8.0–9.6   scan suivant : un balayage, aucun repère ne tombe
+        9.6–10.3  « Résolue », confirmée par le scan
+        11.3–12   fondu de raccord
+    -->
+    <link rel="stylesheet" href="./assets/base.css" />
+    <script src="./assets/gsap.min.js"></script>
+    <style>
+      #term { left: 56px; top: 112px; width: 800px; height: 856px; background: #0b0b0d; }
+      #term .title { color: var(--fog); }
+      .tbody { position: relative; padding: 30px 34px; font-family: var(--mono); font-size: 24px; line-height: 42px; color: var(--paper); }
+      .prompt-line { position: relative; white-space: pre; height: 42px; }
+      .prompt-line .gt { color: var(--signal); }
+      .ch { opacity: 0; }
+      #caret { position: absolute; top: 7px; width: 13px; height: 28px; background: var(--signal); left: 0; }
+      .call { position: relative; margin-top: 18px; opacity: 0; }
+      .call .head { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+      .call .bullet { width: 12px; height: 12px; border-radius: 50%; background: var(--resolved); }
+      .call .tool { color: var(--kw); }
+      .call .args { color: var(--haze); }
+      .call .out { color: var(--fog); padding-left: 26px; white-space: pre; }
+      .call .out .ok { color: var(--resolved); }
+
+      #file { left: 888px; top: 112px; width: 976px; height: 470px; }
+      .body { position: relative; padding: 20px 0 0 0; }
+      .row { position: absolute; left: 0; right: 0; height: 60px; display: flex; align-items: center; }
+      .row .tint { position: absolute; inset: 0; opacity: 0; }
+      .row .sign { width: 40px; text-align: center; font-family: var(--mono); font-size: 22px; color: var(--haze); }
+      .row .num { width: 44px; padding-right: 18px; text-align: right; font-family: var(--mono); font-size: 20px; color: var(--haze); }
+      .row .code { font-size: 22px; line-height: 60px; position: relative; }
+      .strike { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--danger); transform: scaleX(0); transform-origin: left; }
+      .beam { position: absolute; left: 0; right: 0; top: 0; height: 110px; z-index: 3;
+        background: linear-gradient(to bottom, rgba(110,121,214,0), rgba(110,121,214,.13) 70%, rgba(110,121,214,0));
+        border-bottom: 2px solid rgba(110,121,214,.55); opacity: 0; }
+
+      #issue { left: 888px; top: 614px; width: 976px; height: 354px; padding: 30px 34px; }
+      .sev { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 600; }
+      .sev i { width: 12px; height: 12px; border-radius: 50%; display: block; background: var(--critical); }
+      #issue h3 { font-family: var(--display); font-variation-settings: "opsz" 32; font-weight: 600; font-size: 44px; letter-spacing: -0.025em; margin-top: 10px; }
+      #issue .loc { font-family: var(--mono); font-size: 19px; color: var(--fog); margin-top: 4px; }
+      .status { position: absolute; right: 34px; top: 30px; width: 300px; height: 44px; }
+      .status .chip { position: absolute; right: 0; top: 0; height: 44px; font-size: 19px; opacity: 0; }
+      .steps { position: absolute; left: 34px; right: 34px; bottom: 34px; }
+      .track { position: absolute; left: 9px; right: 9px; top: 9px; height: 3px; background: var(--rule-strong); border-radius: 2px; }
+      .fill { position: absolute; left: 9px; right: 9px; top: 9px; height: 3px; background: var(--signal); transform: scaleX(0); transform-origin: left; border-radius: 2px; }
+      .nodes { position: relative; display: flex; justify-content: space-between; }
+      .node { display: grid; justify-items: start; gap: 12px; font-size: 18px; color: var(--fog); white-space: nowrap; }
+      #n2 { position: absolute; left: 50%; top: 0; transform: translateX(-50%); justify-items: center; }
+      #n3 { justify-items: end; }
+      .node .dot { position: relative; width: 21px; height: 21px; border-radius: 50%; background: var(--deck); box-shadow: inset 0 0 0 3px var(--rule-strong); }
+      .node .dot b { position: absolute; inset: 0; border-radius: 50%; transform: scale(0); }
+      #note { position: absolute; left: 888px; top: 990px; font-size: 21px; color: var(--fog); opacity: 0; }
+      #note b { color: var(--paper); font-weight: 500; }
+      #fade { position: absolute; inset: 0; background: var(--night); z-index: 60; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="fix" data-start="0" data-duration="12" data-width="1920" data-height="1080">
+      <div id="fix-stage" class="stage clip" data-start="0" data-duration="12" data-track-index="1">
+        <div class="window" id="term">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">claude, dans votre dépôt</span></div>
+          <div class="tbody">
+            <div class="prompt-line" id="prompt"><span class="gt">&gt; </span><span id="typed"></span><span id="caret"></span></div>
+
+            <div class="call" id="c1">
+              <div class="head"><span class="bullet"></span><span class="tool">list_issues</span><span class="args">(severity=CRITICAL)</span></div>
+              <div class="out">1 faille : app/routes/users.py:10</div>
+            </div>
+            <div class="call" id="c2">
+              <div class="head"><span class="bullet"></span><span class="tool">get_issue</span><span class="args">(id=118)</span></div>
+              <div class="out">Injection SQL, CWE-89
+requête construite par f-string</div>
+            </div>
+            <div class="call" id="c3">
+              <div class="head"><span class="bullet" style="background: var(--fn)"></span><span class="tool" style="color: var(--fn)">Edit</span><span class="args">app/routes/users.py</span></div>
+              <div class="out">requête paramétrée, ligne 10</div>
+            </div>
+            <div class="call" id="c4">
+              <div class="head"><span class="bullet"></span><span class="tool">mark_issue_fixed</span><span class="args">(id=118)</span></div>
+              <div class="out"><span class="ok">corrigée, à vérifier au prochain scan</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="window" id="file">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">app/routes/users.py</span></div>
+          <div class="body">
+            <div class="beam" id="beam"></div>
+            <div class="row" style="top: 20px"><span class="sign"></span><span class="num">7</span><span class="code"><span class="k">def</span> <span class="f">search_users</span>():</span></div>
+            <div class="row" style="top: 80px"><span class="sign"></span><span class="num">8</span><span class="code">    q = request.args.get(<span class="s">"q"</span>)</span></div>
+            <div class="row" id="old" style="top: 140px"><span class="tint" style="background: rgba(211,58,128,.18); opacity: 1"></span><span class="sign" id="old-sign">●</span><span class="num">10</span><span class="code">    rows = db.execute(<span class="s">f"SELECT * FROM users WHERE name='{q}'"</span>)<span class="strike" id="strike"></span></span></div>
+            <div class="row" id="new" style="top: 200px"><span class="tint" style="background: rgba(47,166,123,.16); opacity: 1"></span><span class="sign" style="color: var(--resolved)">+</span><span class="num">10</span><span class="code">    rows = db.execute(<span class="s">"SELECT * FROM users WHERE name=%s"</span>, (q,))</span></div>
+            <div class="row push" style="top: 260px"><span class="sign"></span><span class="num">11</span><span class="code">    <span class="k">return</span> jsonify(rows)</span></div>
+          </div>
+        </div>
+
+        <div class="window" id="issue">
+          <span class="sev"><i></i>Critique</span>
+          <h3>Injection SQL</h3>
+          <div class="loc">app/routes/users.py:10, CWE-89</div>
+          <div class="status">
+            <span class="chip" id="st-open"><span class="pip" style="background: #7684ec"></span>Ouverte</span>
+            <span class="chip" id="st-pending"><span class="pip" style="background: var(--signal)"></span>Corrigée, à vérifier</span>
+            <span class="chip" id="st-done" style="box-shadow: inset 0 0 0 1px rgba(47,166,123,.6)"><span class="pip" style="background: var(--resolved)"></span>Résolue</span>
+          </div>
+          <div class="steps">
+            <div class="track"></div><div class="fill" id="fill"></div>
+            <div class="nodes">
+              <div class="node" id="n1"><span class="dot"><b style="background: #7684ec"></b></span>Ouverte</div>
+              <div class="node" id="n2"><span class="dot"><b style="background: var(--signal)"></b></span>Corrigée par l’agent</div>
+              <div class="node" id="n3"><span class="dot"><b style="background: var(--resolved)"></b></span>Confirmée par le scan</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="note">Un agent ne peut pas déclarer une faille résolue : <b>seul le scan suivant le confirme.</b></div>
+
+        <div class="vignette"></div>
+        <div id="fade"></div>
+      </div>
+    </div>
+
+    <script>
+      /* La consigne, tapée à cadence fixe (déterministe). */
+      const PROMPT = "corrige la faille critique du projet api";
+      const CHAR_W = 14.4, TYPE_AT = 1.0, TYPE_STEP = 0.04, PREFIX = 2;
+      const typed = document.getElementById("typed");
+      for (const c of PROMPT) {
+        const s = document.createElement("span");
+        s.className = "ch"; s.textContent = c; typed.appendChild(s);
+      }
+      const ROW = 60;
+
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#fade", { opacity: 1 }, { opacity: 0, duration: 0.6, ease: "power1.out" }, 0);
+      tl.fromTo("#term", { y: 60, opacity: 0, rotationX: 8 }, { y: 0, opacity: 1, rotationX: 0, duration: 1.2, ease: "expo.out" }, 0.05);
+      tl.fromTo("#file", { x: 70, opacity: 0 }, { x: 0, opacity: 1, duration: 1.1, ease: "expo.out" }, 0.25);
+      tl.fromTo("#issue", { x: 70, opacity: 0 }, { x: 0, opacity: 1, duration: 1.1, ease: "expo.out" }, 0.4);
+      tl.fromTo("#st-open", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.8);
+      tl.fromTo("#n1 b", { scale: 0 }, { scale: 1, duration: 0.4, ease: "back.out(3)" }, 0.9);
+
+      // Nouvelle ligne repliée sous l'ancienne au départ (transforms seulement).
+      tl.fromTo("#new", { opacity: 0, y: -ROW }, { opacity: 0, y: -ROW, duration: 0.01 }, 0);
+      tl.fromTo(".push", { y: -ROW }, { y: -ROW, duration: 0.01 }, 0);
+
+      // Frappe + curseur.
+      const chars = typed.querySelectorAll(".ch");
+      chars.forEach((el, i) => tl.set(el, { opacity: 1 }, TYPE_AT + i * TYPE_STEP));
+      tl.fromTo("#caret", { x: PREFIX * CHAR_W }, { x: (PREFIX + PROMPT.length) * CHAR_W, duration: PROMPT.length * TYPE_STEP, ease: `steps(${PROMPT.length})` }, TYPE_AT);
+      const typedEnd = TYPE_AT + PROMPT.length * TYPE_STEP;
+      tl.to("#caret", { opacity: 0, duration: 0.15 }, typedEnd + 0.2);
+
+      // Appels MCP, un par un.
+      const call = (id, at) => tl.fromTo(id, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, at);
+      call("#c1", 2.9);
+      call("#c2", 3.9);
+      call("#c3", 5.0);
+      call("#c4", 6.5);
+
+      // Edit : barrer, insérer, pousser la suite.
+      tl.fromTo("#strike", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power2.inOut" }, 5.15);
+      tl.to("#old", { opacity: 0.45, duration: 0.4 }, 5.45);
+      tl.to("#old-sign", { color: "#e5484d", duration: 0.2 }, 5.15);
+      tl.to(".push", { y: 0, duration: 0.6, ease: "power3.inOut" }, 5.55);
+      tl.to("#new", { y: 0, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 5.55);
+      tl.to("#old", { opacity: 0, y: -12, duration: 0.5, ease: "power2.in" }, 7.1);
+      tl.to("#new", { y: -ROW, duration: 0.6, ease: "power3.inOut" }, 7.4);
+      tl.to(".push", { y: -ROW, duration: 0.6, ease: "power3.inOut" }, 7.4);
+      tl.to("#new .tint", { opacity: 0, duration: 0.6 }, 7.6);
+
+      // Statut : Ouverte → Corrigée, à vérifier.
+      tl.to("#st-open", { opacity: 0, y: -8, duration: 0.25 }, 6.75);
+      tl.fromTo("#st-pending", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "back.out(2)" }, 6.85);
+      tl.fromTo("#fill", { scaleX: 0 }, { scaleX: 0.5, duration: 0.6, ease: "power2.inOut" }, 6.75);
+      tl.fromTo("#n2 b", { scale: 0 }, { scale: 1, duration: 0.4, ease: "back.out(3)" }, 7.25);
+
+      // Scan suivant : rien ne tombe.
+      tl.fromTo("#beam", { y: -110, opacity: 0 }, { y: 300, duration: 1.5, ease: "none" }, 8.1);
+      tl.fromTo("#beam", { opacity: 0 }, { opacity: 1, duration: 0.2, immediateRender: false }, 8.1);
+      tl.to("#beam", { opacity: 0, duration: 0.3 }, 9.3);
+
+      // Résolue.
+      tl.to("#st-pending", { opacity: 0, y: -8, duration: 0.25 }, 9.6);
+      tl.fromTo("#st-done", { opacity: 0, y: 8, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(2.4)" }, 9.7);
+      tl.to("#fill", { scaleX: 1, backgroundColor: "#2fa67b", duration: 0.6, ease: "power2.inOut" }, 9.6);
+      tl.fromTo("#n3 b", { scale: 0 }, { scale: 1, duration: 0.45, ease: "back.out(3)" }, 10.1);
+      tl.fromTo("#note", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 10.2);
+
+      tl.to("#fade", { opacity: 1, duration: 0.7, ease: "power1.in" }, 11.3);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["fix"] = tl;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+# Système / IDE
+.DS_Store
+.idea/
+*.iml
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+local.properties
+
+# Node / Bun
+node_modules/
+frontend/dist/
+
+# Installeurs de l'app desktop (publiés par la CI dans les releases GitHub)
+frontend/downloads/
+installers/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.log

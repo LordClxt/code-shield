@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>CodeShield — Le scan local</title>
+    <!--
+      Film 1 · « Le scan tourne chez vous » (10,5 s, boucle).
+        0.0–1.1  la fenêtre de code se pose (bascule 3D → presque à plat)
+        0.5–1.4  la carte des moteurs glisse au premier plan (parallaxe)
+        1.2–4.0  un balayage unique descend le fichier ; chaque repère de
+                 sévérité tombe au moment exact où le faisceau atteint sa ligne,
+                 et le moteur correspondant rend son résultat dans la même image
+        4.6–5.8  poussée caméra sur la ligne 10, le reste du fichier s'éteint
+        5.4–6.4  soulignement de la plage fautive, fiche de la faille
+        7.0      « 0 octet de code envoyé » s'allume
+        9.8–10.5 fondu au noir de nuit (raccord de boucle)
+    -->
+    <link rel="stylesheet" href="./assets/base.css" />
+    <script src="./assets/gsap.min.js"></script>
+    <style>
+      .perspective { position: absolute; inset: 0; perspective: 2200px; perspective-origin: 50% 30%; }
+      .world { position: absolute; inset: 0; transform-origin: 990px 725px; will-change: transform; }
+      #code-win { left: 90px; top: 96px; width: 1380px; height: 814px; transform-origin: 50% 0%; }
+      .body { position: relative; padding: 24px 0 0 22px; }
+      .row { position: relative; display: flex; height: 58px; align-items: center; }
+      .row .tint { position: absolute; left: -22px; right: 0; top: 0; bottom: 0; opacity: 0; }
+      .gut { position: relative; width: 44px; display: grid; place-items: center; }
+      .gut .mark { width: 14px; height: 14px; border-radius: 50%; transform: scale(0); }
+      .num { width: 56px; padding-right: 24px; text-align: right; font-family: var(--mono); font-size: 22px; color: var(--haze); }
+      .code { font-size: 30px; line-height: 58px; position: relative; }
+      .hit { position: relative; }
+      .underline { position: absolute; left: 0; right: 0; bottom: 4px; height: 4px; border-radius: 2px;
+        background: var(--critical); transform: scaleX(0); transform-origin: left center; }
+      .beam { position: absolute; left: 0; right: 0; top: 0; height: 120px; z-index: 3; pointer-events: none;
+        background: linear-gradient(to bottom, rgba(110,121,214,0) 0%, rgba(110,121,214,.13) 70%, rgba(110,121,214,.0) 100%);
+        border-bottom: 2px solid rgba(110,121,214,.55); opacity: 0; }
+      .inline-chip { margin-left: 28px; height: 34px; font-size: 17px; opacity: 0; }
+      .inline-chip .muted { color: var(--fog); font-weight: 400; }
+
+      /* Fiche de la faille, dans le monde (elle suit la caméra). */
+      #callout { position: absolute; left: 632px; top: 762px; width: 660px; z-index: 6;
+        background: var(--night); border-radius: 18px; padding: 26px 28px 24px;
+        box-shadow: 0 0 0 1px rgba(211,58,128,.55), 0 30px 80px -10px rgba(0,0,0,.7); transform-origin: 0 0; opacity: 0; }
+      #callout h3 { font-family: var(--display); font-variation-settings: "opsz" 32; font-weight: 600; font-size: 36px; letter-spacing: -0.02em; margin: 12px 0 6px; }
+      #callout p { font-size: 20px; color: var(--fog); line-height: 1.45; }
+      #callout .chips { display: flex; gap: 10px; margin-top: 18px; }
+      #callout .chip { height: 34px; font-size: 16px; font-family: var(--mono); }
+      .sev { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; }
+      .sev i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+      /* Carte des moteurs : calque avant, parallaxe plus faible. */
+      #engines { left: 1318px; top: 64px; width: 540px; padding: 26px 30px 24px; border-radius: 22px; z-index: 10;
+        background: rgba(15,15,18,.94); backdrop-filter: blur(14px); }
+      #engines header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+      #engines h2 { font-family: var(--display); font-variation-settings: "opsz" 32; font-weight: 600; font-size: 28px; letter-spacing: -0.015em; }
+      #engines header span { font-size: 16px; color: var(--haze); }
+      .eng { display: grid; grid-template-columns: 1fr 120px; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
+      .eng .name { font-size: 21px; font-weight: 500; }
+      .eng .name small { font-size: 16px; color: var(--haze); font-weight: 400; margin-left: 8px; }
+      .eng .res { position: relative; text-align: right; font-size: 18px; color: var(--fog); height: 28px; }
+      .eng .res span { position: absolute; right: 0; top: 0; white-space: nowrap; opacity: 0; }
+      .eng .res .found { color: var(--paper); font-weight: 500; }
+      .eng .track { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+      .eng .bar { height: 100%; background: var(--signal); transform: scaleX(0); transform-origin: left center; }
+      .eng .bar.done { background: var(--fog); }
+      .total { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--rule); padding-top: 18px; margin-top: 6px; }
+      .total .lbl { font-size: 18px; color: var(--fog); }
+      .total .val { font-family: var(--mono); font-size: 20px; color: var(--signal); position: relative; }
+      .count { position: relative; display: inline-block; width: 120px; height: 30px; text-align: right; }
+      .count span { position: absolute; right: 0; top: 0; opacity: 0; white-space: nowrap; font-size: 20px; }
+      #fade { position: absolute; inset: 0; background: var(--night); z-index: 60; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="scan" data-start="0" data-duration="10.5" data-width="1920" data-height="1080">
+      <div id="scan-stage" class="stage clip" data-start="0" data-duration="10.5" data-track-index="1">
+        <div class="perspective">
+          <div class="world" id="world">
+            <div class="window" id="code-win">
+              <div class="chrome">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="title">app/routes/users.py</span>
+              </div>
+              <div class="body" id="code-body">
+                <div class="beam" id="beam"></div>
+                <div class="row" data-line="1"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">1</span><span class="code"><span class="k">from</span> flask <span class="k">import</span> request, jsonify</span></div>
+                <div class="row" data-line="2"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">2</span><span class="code"><span class="k">from</span> app.db <span class="k">import</span> db</span></div>
+                <div class="row" data-line="3"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">3</span><span class="code"> </span></div>
+                <div class="row" data-line="4" id="line-4"><span class="tint" style="background: rgba(191,84,16,.16)"></span><span class="gut"><span class="mark" style="background: var(--high)"></span></span><span class="num">4</span><span class="code">API_TOKEN = <span class="s">"sk_live_51H••••••••••••••••"</span></span><span class="chip inline-chip" id="chip-4"><span class="pip" style="background: var(--high)"></span>Haute <span class="muted">secret Stripe</span></span></div>
+                <div class="row" data-line="5"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">5</span><span class="code"> </span></div>
+                <div class="row" data-line="6"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">6</span><span class="code"><span class="f">@app.get</span>(<span class="s">"/users/search"</span>)</span></div>
+                <div class="row" data-line="7"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">7</span><span class="code"><span class="k">def</span> <span class="f">search_users</span>():</span></div>
+                <div class="row" data-line="8"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">8</span><span class="code">    q = request.args.get(<span class="s">"q"</span>)</span></div>
+                <div class="row" data-line="9"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">9</span><span class="code"> </span></div>
+                <div class="row" data-line="10" id="line-10"><span class="tint" style="background: rgba(211,58,128,.16)"></span><span class="gut"><span class="mark" style="background: var(--critical)"></span></span><span class="num">10</span><span class="code">    rows = db.execute(<span class="s hit">f"SELECT * FROM users WHERE name='{q}'"<span class="underline" id="underline"></span></span>)</span></div>
+                <div class="row" data-line="11"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">11</span><span class="code">    <span class="c"># TODO: limiter les champs</span></span></div>
+                <div class="row" data-line="12"><span class="tint"></span><span class="gut"><span class="mark"></span></span><span class="num">12</span><span class="code">    <span class="k">return</span> jsonify(rows)</span></div>
+              </div>
+            </div>
+
+            <div id="callout">
+              <span class="sev"><i style="background: var(--critical)"></i>Critique</span>
+              <h3>Injection SQL</h3>
+              <p>La requête est construite avec une entrée utilisateur. Passez par une requête paramétrée.</p>
+              <div class="chips">
+                <span class="chip">CWE-89</span>
+                <span class="chip">semgrep</span>
+                <span class="chip">ligne 10, col. 23</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="window" id="engines">
+          <header><h2>Scan local</h2><span>2 moteurs à la fois</span></header>
+          <div class="eng" id="e-semgrep"><span class="name">Semgrep<small>SAST</small></span><span class="res"><span class="run">en cours</span><span class="found">1 faille</span></span><div class="track"><div class="bar"></div></div></div>
+          <div class="eng" id="e-gitleaks"><span class="name">Gitleaks<small>secrets</small></span><span class="res"><span class="run">en cours</span><span class="found">1 faille</span></span><div class="track"><div class="bar"></div></div></div>
+          <div class="eng" id="e-trivy"><span class="name">Trivy<small>dépendances</small></span><span class="res"><span class="run">en cours</span><span class="clean">rien</span></span><div class="track"><div class="bar"></div></div></div>
+          <div class="eng" id="e-bandit"><span class="name">Bandit<small>Python</small></span><span class="res"><span class="run">en cours</span><span class="clean">rien</span></span><div class="track"><div class="bar"></div></div></div>
+          <div class="eng" id="e-osv"><span class="name">OSV-Scanner<small>lockfiles</small></span><span class="res"><span class="run">en cours</span><span class="clean">rien</span></span><div class="track"><div class="bar"></div></div></div>
+          <div class="total">
+            <span class="lbl">Code envoyé au serveur</span>
+            <span class="val tabular" id="zero">0 octet</span>
+          </div>
+        </aside>
+
+        <div class="vignette"></div>
+        <div id="fade"></div>
+      </div>
+    </div>
+
+    <script>
+      /* Géométrie auteur (doit correspondre au CSS ci-dessus). */
+      const ROW = 58, PAD_TOP = 24, BEAM_H = 120;
+      const SCAN_START = 1.2, SCAN_DUR = 2.8;
+      const BEAM_FROM = -BEAM_H, BEAM_TO = PAD_TOP + 12 * ROW + 40;
+      /** Instant où le bas du faisceau (son trait) atteint le milieu de la ligne n. */
+      const reach = (n) => {
+        const center = PAD_TOP + (n - 1) * ROW + ROW / 2;
+        return SCAN_START + SCAN_DUR * ((center - BEAM_H - BEAM_FROM) / (BEAM_TO - BEAM_FROM));
+      };
+      const T4 = reach(4), T10 = reach(10);
+      const PUSH = 4.6, END = 10.5;
+
+      const tl = gsap.timeline({ paused: true });
+
+      /* Ouverture : du noir, la fenêtre se pose. */
+      tl.fromTo("#fade", { opacity: 1 }, { opacity: 0, duration: 0.6, ease: "power1.out" }, 0);
+      tl.fromTo("#code-win", { rotationX: 22, y: 120, opacity: 0, scale: 0.94 },
+        { rotationX: 6, y: 0, opacity: 1, scale: 1, duration: 1.4, ease: "expo.out" }, 0.05);
+      tl.fromTo("#code-win", { rotationX: 6 }, { rotationX: 0, duration: 3.2, ease: "sine.inOut", immediateRender: false }, 1.45);
+      tl.fromTo("#engines", { x: 140, opacity: 0, rotationY: -14 },
+        { x: 0, opacity: 1, rotationY: 0, duration: 1.1, ease: "expo.out" }, 0.5);
+      tl.fromTo(".eng", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out", stagger: 0.07 }, 0.75);
+
+      /* Moteurs : deux à la fois, chaque fin libère une place. */
+      const engine = (id, start, end, found) => {
+        const row = `#${id}`;
+        tl.fromTo(`${row} .bar`, { scaleX: 0 }, { scaleX: 1, duration: end - start, ease: "power1.inOut" }, start);
+        tl.fromTo(`${row} .run`, { opacity: 0 }, { opacity: 1, duration: 0.2 }, start);
+        tl.to(`${row} .run`, { opacity: 0, duration: 0.15 }, end);
+        tl.fromTo(`${row} ${found ? ".found" : ".clean"}`, { opacity: 0, x: 10 }, { opacity: 1, x: 0, duration: 0.35, ease: "power3.out" }, end);
+        tl.fromTo(`${row} .bar`, { backgroundColor: "#6e79d6" }, { backgroundColor: "#7c7c85", duration: 0.4, immediateRender: false }, end);
+      };
+      engine("e-gitleaks", 1.0, T4, true);
+      engine("e-semgrep", 1.0, T10, true);
+      engine("e-trivy", T4, 3.95, false);
+      engine("e-bandit", T10, 4.35, false);
+      engine("e-osv", 3.95, 4.6, false);
+
+      /* Balayage unique (ease linéaire : le calcul reach() en dépend). */
+      tl.fromTo("#beam", { y: BEAM_FROM, opacity: 0 }, { y: BEAM_TO, duration: SCAN_DUR, ease: "none" }, SCAN_START);
+      tl.fromTo("#beam", { opacity: 0 }, { opacity: 1, duration: 0.25, immediateRender: false }, SCAN_START);
+      tl.to("#beam", { opacity: 0, duration: 0.3 }, SCAN_START + SCAN_DUR - 0.3);
+
+      /* Repères posés quand le faisceau atteint la ligne. */
+      const mark = (n, at) => {
+        tl.fromTo(`#line-${n} .mark`, { scale: 0 }, { scale: 1, duration: 0.5, ease: "back.out(3)" }, at);
+        tl.fromTo(`#line-${n} .tint`, { opacity: 0 }, { opacity: 1, duration: 0.45, ease: "power2.out" }, at);
+      };
+      mark(4, T4);
+      tl.fromTo("#chip-4", { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out" }, T4 + 0.1);
+      mark(10, T10);
+
+      /* Poussée caméra sur la ligne 10 ; le reste s'éteint. */
+      tl.fromTo("#world", { scale: 1, x: 0, y: 0 }, { scale: 1.25, x: -30, y: -150, duration: 1.3, ease: "power3.inOut" }, PUSH);
+      tl.to(".row:not(#line-10)", { opacity: 0.22, duration: 0.8, ease: "power2.out" }, PUSH + 0.3);
+      tl.to("#chip-4", { opacity: 0, duration: 0.4 }, PUSH + 0.2);
+      tl.to("#engines", { x: 24, y: -16, scale: 0.94, duration: 1.3, ease: "power3.inOut" }, PUSH);
+      tl.fromTo("#underline", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power3.inOut" }, PUSH + 0.85);
+      tl.fromTo("#callout", { opacity: 0, y: 26, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "expo.out" }, PUSH + 1.15);
+      tl.fromTo("#callout .chip", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out", stagger: 0.08 }, PUSH + 1.45);
+
+      /* La seule phrase qui compte. */
+      tl.fromTo("#zero", { color: "#6e79d6", textShadow: "0 0 0px rgba(110,121,214,0)" },
+        { color: "#ededef", textShadow: "0 0 18px rgba(110,121,214,.75)", duration: 0.5, ease: "power2.out" }, 7.0);
+      tl.to("#zero", { textShadow: "0 0 6px rgba(110,121,214,.25)", color: "#b4bbef", duration: 1.2, ease: "power2.inOut" }, 7.5);
+
+      /* Dérive lente puis fondu de raccord. */
+      tl.to("#world", { scale: 1.29, duration: END - 5.9 - 0.7, ease: "sine.inOut" }, 5.9);
+      tl.to("#fade", { opacity: 1, duration: 0.7, ease: "power1.in" }, END - 0.7);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["scan"] = tl;
+    </script>
+  </body>
+</html>

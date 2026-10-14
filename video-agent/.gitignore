@@ -1,0 +1,8 @@
+takes/
+edits/**/*.mp4
+studio/public/
+studio/out/
+studio/node_modules/
+studio/whisper.cpp/
+.tmp/
+.env

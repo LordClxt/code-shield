@@ -1,0 +1,11 @@
+{
+  "scan_id": 12,
+  "created": 1,
+  "touched": 2,
+  "resolved": 1,
+  "reopened": 0,
+  "open_total": 3,
+  "open_counts": { "CRITICAL": 1, "HIGH": 2, "MEDIUM": 0, "LOW": 0 },
+  "score": 80,
+  "grade": "B"
+}

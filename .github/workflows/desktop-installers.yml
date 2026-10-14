@@ -1,0 +1,80 @@
+# Installeurs de l'app desktop pour macOS (.dmg), Windows (.msi) et Linux (.deb).
+# jpackage ne produit que l'installeur de l'OS sur lequel il tourne : un runner par OS.
+# - push sur main / lancement manuel : installeurs disponibles en artefacts du run.
+# - tag vX.Y.Z : publiés dans une release GitHub, sous des noms stables, donc
+#   https://github.com/<owner>/<repo>/releases/latest/download/CodeShield-windows.msi
+#   pointe toujours sur la dernière version (utilisable comme VITE_DOWNLOAD_URL).
+name: Desktop installers
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-installers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macOS }
+          - { os: windows-latest, label: Windows }
+          - { os: ubuntu-latest, label: Linux }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Outils .deb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+
+      - name: Tests
+        working-directory: desktop
+        run: ./gradlew :shared:jvmTest
+
+      - name: Installeur
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export APP_VERSION="${GITHUB_REF_NAME#v}"; fi
+          ./desktop/scripts/package-installer.sh "$PWD/installers"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.label }}
+          path: installers/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true

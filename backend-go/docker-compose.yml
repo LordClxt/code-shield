@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: codeshield
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codeshield}
+      POSTGRES_DB: codeshield
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codeshield"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: postgres://codeshield:${POSTGRES_PASSWORD:-codeshield}@db:5432/codeshield?sslmode=disable
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY doit être défini (>= 32 octets)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

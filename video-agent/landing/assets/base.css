@@ -1,0 +1,45 @@
+/* Socle commun des films CodeShield : mêmes tokens que frontend/src/styles.css. */
+/* Mêmes polices que l'app desktop : Inter (optique variable) et JetBrains Mono. */
+@font-face { font-family: "Inter"; src: url("./fonts/inter-latin-opsz-normal.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "JetBrains Mono"; src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-display: block; }
+
+:root {
+  /* Tokens de desktop/…/ui/theme/ShieldTheme.kt */
+  --night: #09090b; --deck: #0f0f12; --deck-2: #16161a; --rule: #1f1f23; --rule-strong: #2e2e34;
+  --paper: #ededef; --fog: #a0a0a8; --haze: #7c7c85; --signal: #6e79d6;
+  --critical: #d33a80; --high: #bf5410; --medium: #a0991f; --low: #3a80e0;
+  --resolved: #2fa67b; --danger: #e5484d;
+  --kw: #c3a6ff; --str: #9fd3b0; --fn: #8fb6ff;
+  --display: "Inter", sans-serif;
+  --sans: "Inter", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--night); color: var(--paper);
+  font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+
+.stage { position: absolute; inset: 0; overflow: hidden; background: var(--night); }
+.vignette { position: absolute; inset: 0; pointer-events: none; z-index: 50;
+  background: radial-gradient(ellipse 120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.45) 100%); }
+
+/* Titrage : Inter en optique « display », approche serrée. */
+.headline { font-family: var(--display); font-variation-settings: "opsz" 32; font-weight: 600;
+  font-size: 84px; line-height: .98; letter-spacing: -0.045em; color: var(--paper); }
+.headline .muted { color: var(--fog); }
+.word { display: inline-block; will-change: transform; }
+.mask { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .08em; }
+.caption { font-family: var(--sans); font-size: 26px; line-height: 1.45; color: var(--fog); }
+
+.window { position: absolute; background: var(--deck); border-radius: 22px;
+  box-shadow: 0 0 0 1px var(--rule-strong), 0 30px 80px -24px rgba(0,0,0,.6); overflow: hidden; }
+.chrome { height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-bottom: 1px solid var(--rule); }
+.chrome .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--rule-strong); }
+.chrome .title { margin-left: 14px; font-size: 17px; color: var(--haze); }
+
+.code { font-family: var(--mono); font-size: 21px; line-height: 40px; color: rgba(231,236,245,.9); white-space: pre; }
+.k { color: var(--kw); } .s { color: var(--str); } .f { color: var(--fn); } .c { color: var(--haze); font-style: italic; }
+
+.chip { display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 16px; border-radius: 999px;
+  font-size: 18px; font-weight: 500; background: var(--deck-2); box-shadow: inset 0 0 0 1px var(--rule-strong); color: var(--paper); white-space: nowrap; }
+.chip .pip { width: 10px; height: 10px; border-radius: 50%; }
+.tabular { font-variant-numeric: tabular-nums; }

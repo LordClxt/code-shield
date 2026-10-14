@@ -1,0 +1,45 @@
+{
+  "project_id": 7,
+  "commit_sha": "3f2a9c1",
+  "branch": "main",
+  "findings": [
+    {
+      "tool": "SEMGREP",
+      "rule_id": "python.lang.security.audit.formatted-sql-query",
+      "file_path": "app/db.py",
+      "line_number": 42,
+      "end_line": 44,
+      "column": 9,
+      "end_column": 31,
+      "severity": "HIGH",
+      "title": "formatted-sql-query",
+      "message": "Detected possible formatted SQL query.",
+      "category": "SAST",
+      "cwe": ["CWE-89"],
+      "owasp": ["A03:2021 - Injection"],
+      "fingerprint": "6f1c5a0c2f8e9d3b7a4e1f0c9b8a7d6e5f4c3b2a19087f6e5d4c3b2a1908f7e6"
+    },
+    {
+      "tool": "TRIVY",
+      "rule_id": "CVE-2023-30861",
+      "file_path": "requirements.txt",
+      "line_number": 3,
+      "severity": "HIGH",
+      "title": "flask: Possible disclosure of permanent session cookie",
+      "category": "SCA",
+      "cwe": ["CWE-539"],
+      "package": "flask",
+      "installed_version": "2.2.0",
+      "fixed_version": "2.2.5"
+    },
+    {
+      "tool": "GITLEAKS",
+      "rule_id": "aws-access-token",
+      "file_path": ".env.example",
+      "line_number": 2,
+      "severity": "CRITICAL",
+      "title": "AWS Access Key",
+      "category": "SECRET"
+    }
+  ]
+}
