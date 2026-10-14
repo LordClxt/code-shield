@@ -133,8 +133,7 @@ fun Sidebar(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
         ) {
-            ShieldLogo(Modifier.size(18.dp))
-            Text("CodeShield", color = Shield.Text, fontSize = TypeScale.body, fontWeight = FontWeight.SemiBold)
+            codeshield.ui.design.BrandWordmark(height = 17.dp)
         }
 
         // Sélecteur de projets consultés (Dropdown)
@@ -482,32 +481,5 @@ private fun PulsingDot(color: Color) {
                 .clip(CircleShape).background(color.copy(alpha = 0.5f)),
         )
         StatusDot(color, 7.dp)
-    }
-}
-
-/** Logo bouclier minimal (Canvas) : contour clair + coche accent. */
-@Composable
-fun ShieldLogo(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        val shield = Path().apply {
-            moveTo(w * 0.5f, 0f)
-            lineTo(w * 0.94f, h * 0.16f)
-            lineTo(w * 0.94f, h * 0.48f)
-            cubicTo(w * 0.94f, h * 0.76f, w * 0.72f, h * 0.92f, w * 0.5f, h)
-            cubicTo(w * 0.28f, h * 0.92f, w * 0.06f, h * 0.76f, w * 0.06f, h * 0.48f)
-            lineTo(w * 0.06f, h * 0.16f)
-            close()
-        }
-        drawPath(shield, Shield.Accent, style = Fill)
-        val half = Path().apply {
-            moveTo(w * 0.5f, 0f)
-            lineTo(w * 0.94f, h * 0.16f)
-            lineTo(w * 0.94f, h * 0.48f)
-            cubicTo(w * 0.94f, h * 0.76f, w * 0.72f, h * 0.92f, w * 0.5f, h)
-            close()
-        }
-        drawPath(half, Color.White.copy(alpha = 0.18f), style = Fill)
     }
 }

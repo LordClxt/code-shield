@@ -2,6 +2,7 @@ import { Accordion } from 'radix-ui'
 import { Bot, ChevronDown, Laptop } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { CSSProperties, PointerEvent, ReactNode } from 'react'
+import { BrandMark } from '@/components/brand'
 import { cn } from '@/lib/utils'
 import { CountUp, EASE, cardIn, inView, pop, rise, slide, stagger } from './motion'
 
@@ -11,13 +12,7 @@ import { CountUp, EASE, cardIn, inView, pop, rise, slide, stagger } from './moti
 
 /** Marque seule (le bouclier), pour les pastilles lumineuses. */
 export function ShieldMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 28 32" className={className} aria-hidden>
-      <path d="M14 1.5 26 6v10.2c0 7.2-5 12.6-12 14.3C7 28.8 2 23.4 2 16.2V6z" fill="none" stroke="currentColor" strokeWidth="2.2" />
-      <path d="M8.5 11h9M8.5 15.5h11M8.5 20h6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" opacity="0.6" />
-      <circle cx="21.5" cy="20" r="2.6" fill="#d33a80" />
-    </svg>
-  )
+  return <BrandMark className={className} />
 }
 
 /** Titre de section centré : une pastille, le titre en dégradé, une phrase. */

@@ -33,6 +33,11 @@ compose.desktop {
             // MAJOR.MINOR.PATCH (exigé par le .msi) ; la CI le fixe depuis le tag (v1.2.3 -> 1.2.3).
             packageVersion = (findProperty("appVersion") as String?) ?: "1.0.0"
             vendor = "CodeShield"
+
+            // Icône d'app (le d-bouclier) : générée depuis le logo officiel.
+            macOS { iconFile.set(project.file("icons/CodeShield.icns")) }
+            windows { iconFile.set(project.file("icons/CodeShield.ico")) }
+            linux { iconFile.set(project.file("icons/CodeShield.png")) }
         }
     }
 }

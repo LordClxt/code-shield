@@ -1,5 +1,8 @@
 package org.example.desktop
 
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import javax.imageio.ImageIO
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -33,11 +36,16 @@ fun main() {
         System.setProperty("apple.awt.fullWindowContent", "true")
     }
 
+    // Icône de fenêtre / Dock (le d-bouclier), embarquée dans les ressources.
+    val appIcon = Thread.currentThread().contextClassLoader.getResourceAsStream("icon.png")
+        ?.use { BitmapPainter(ImageIO.read(it).toComposeImageBitmap()) }
+
     application {
         val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
         Window(
             onCloseRequest = ::exitApplication,
-            title = "CodeShield Desktop",
+            title = "CodeShield",
+            icon = appIcon,
             state = windowState,
         ) {
             LaunchedEffect(window) {

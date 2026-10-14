@@ -2,19 +2,15 @@ import { GRADE_META, type Grade } from '@/lib/score'
 import { CATEGORY_LABEL, SEVERITY_META, STATUS_META, TOOL_LABEL } from '@/lib/severity'
 import type { Category, Severity, ToolName, VulnStatus } from '@/lib/types'
 import { SEVERITIES } from '@/lib/types'
+import { BrandMark, Wordmark } from '@/components/brand'
 import { cn } from '@/lib/utils'
 import { Tooltip } from './ui/overlay'
 
-/** Marque : un bouclier dessiné comme une gouttière de code (lignes + un repère). */
+/** Marque : le logo « codeshield » (ou le d-bouclier seul). */
 export function Logo({ className, withName = true }: { className?: string; withName?: boolean }) {
   return (
-    <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <svg viewBox="0 0 28 32" className="h-7 w-auto" aria-hidden>
-        <path d="M14 1.5 26 6v10.2c0 7.2-5 12.6-12 14.3C7 28.8 2 23.4 2 16.2V6z" fill="none" stroke="currentColor" strokeWidth="2" className="text-paper" />
-        <path d="M8.5 11h9M8.5 15.5h11M8.5 20h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-fog" />
-        <circle cx="21.5" cy="20" r="2.4" className="fill-sev-critical" />
-      </svg>
-      {withName ? <span className="font-display text-[19px] font-semibold tracking-tight">CodeShield</span> : null}
+    <span className={cn('inline-flex items-center', className)}>
+      {withName ? <Wordmark /> : <BrandMark className="h-7 w-auto" />}
     </span>
   )
 }
