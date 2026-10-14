@@ -15,10 +15,10 @@ L'application Desktop est un agent natif ultra-performant chargé de manipuler l
 - **Réseau :** Ktor Client avec sérialisation JSON intégrée et authentification par Token Bearer.
 - **Stockage Local :** historique JSON local (`JvmFileHistoryStore`) ; SQLDelight prévu.
 - **Exécution CLI :** `java.lang.ProcessBuilder` (stdout/stderr lus en parallèle, annulation et timeout par moteur), via un registre de moteurs (`scanner/ScannerEngine.kt`) :
-  - `semgrep` (SAST), `bandit` (SAST Python)
+  - `opengrep` (SAST, règles et JSON Semgrep ; outil `SEMGREP` dans le contrat pour garder l'identité des failles)
   - `gitleaks --redact` (secrets)
   - `trivy fs` (SCA + IaC + secrets), `osv-scanner` (SCA), `dependency-check.sh` (SCA)
-  - `checkov` (IaC)
+  - Aucun prérequis : Opengrep, Gitleaks, Trivy et OSV-Scanner sont téléchargés en binaires autonomes (versions épinglées, SHA-256 vérifié) dans `~/.codeshield/bin`. Ni Python ni pip.
   - Moteurs lancés en parallèle (2 max), `cwd` = racine du projet, rapports dans un dossier temporaire (jamais dans le dépôt), auto-détection des moteurs pertinents.
   - Empreinte (`logic/Fingerprint.kt`) : sha256 salé calculé localement, seule l'empreinte part (jamais le texte de la ligne).
 

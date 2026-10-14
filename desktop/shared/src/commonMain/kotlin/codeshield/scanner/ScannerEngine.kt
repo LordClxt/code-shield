@@ -3,8 +3,6 @@ package codeshield.scanner
 import codeshield.model.Category
 import codeshield.model.Finding
 import codeshield.model.ToolName
-import codeshield.parser.parseBanditResults
-import codeshield.parser.parseCheckovResults
 import codeshield.parser.parseDependencyCheckResults
 import codeshield.parser.parseGitleaksResults
 import codeshield.parser.parseOsvResults
@@ -63,11 +61,6 @@ data class ProjectProfile(
     val fileNames: Set<String> = emptySet(),
     val known: Boolean = true,
 ) {
-    val hasPython: Boolean get() = !known || "py" in extensions
-    val hasIac: Boolean
-        get() = !known || extensions.any { it in setOf("tf", "hcl", "bicep") } ||
-            fileNames.any { it == "dockerfile" || it.endsWith(".dockerfile") || it == "chart.yaml" || it == "kustomization.yaml" } ||
-            fileNames.any { it.endsWith(".yml") || it.endsWith(".yaml") }
     val hasManifests: Boolean get() = !known || fileNames.any { it in MANIFESTS }
 
     companion object {
@@ -154,40 +147,6 @@ object OsvScannerEngine : ScannerEngine {
     override fun parse(rawJson: String, projectDir: String) = parseOsvResults(rawJson, projectDir)
 }
 
-object BanditEngine : ScannerEngine {
-    override val tool = ToolName.BANDIT
-    override val label = "Bandit"
-    override val binary = "bandit"
-    override val categories = setOf(Category.SAST)
-    override val description = "SAST Python dédié (optionnel : Opengrep couvre déjà Python)"
-    override val installHint = "optionnel, non installé par l'app : `brew install bandit` ou `pipx install bandit`"
-    override val defaultEnabled = false
-    override val outputMode = OutputMode.REPORT_FILE
-    override fun isRelevant(profile: ProjectProfile) = profile.hasPython
-    override fun command(binaryPath: String, workDir: String, options: EngineOptions) = listOf(
-        binaryPath, "-r", ".", "-f", "json", "-o", reportPath(workDir), "-q",
-        "-x", "./.venv,./venv,./node_modules,./build,./dist,./.git",
-    )
-    override fun parse(rawJson: String, projectDir: String) = parseBanditResults(rawJson, projectDir)
-}
-
-object CheckovEngine : ScannerEngine {
-    override val tool = ToolName.CHECKOV
-    override val label = "Checkov"
-    override val binary = "checkov"
-    override val categories = setOf(Category.IAC)
-    override val description = "IaC : Terraform, Kubernetes, Dockerfile (optionnel : Trivy couvre déjà l'IaC)"
-    override val installHint = "optionnel, non installé par l'app : `brew install checkov` ou `pipx install checkov`"
-    override val defaultEnabled = false
-    override val outputMode = OutputMode.STDOUT
-    override fun isRelevant(profile: ProjectProfile) = profile.hasIac
-    override fun command(binaryPath: String, workDir: String, options: EngineOptions) = listOf(
-        binaryPath, "-d", ".", "-o", "json", "--quiet", "--compact", "--skip-download",
-        "--skip-path", "node_modules",
-    )
-    override fun parse(rawJson: String, projectDir: String) = parseCheckovResults(rawJson, projectDir)
-}
-
 object DependencyCheckEngine : ScannerEngine {
     override val tool = ToolName.DEPENDENCY_CHECK
     override val label = "Dependency-Check"
@@ -210,10 +169,13 @@ object DependencyCheckEngine : ScannerEngine {
 /** Registre des moteurs, dans l'ordre d'affichage. */
 object ScannerEngines {
     val all: List<ScannerEngine> = listOf(
-        OpengrepEngine, GitleaksEngine, TrivyEngine, OsvScannerEngine, BanditEngine, CheckovEngine, DependencyCheckEngine,
+        OpengrepEngine, GitleaksEngine, TrivyEngine, OsvScannerEngine, DependencyCheckEngine,
     )
 
     fun of(tool: ToolName): ScannerEngine = all.first { it.tool == tool }
+
+    /** Null pour les outils historiques (BANDIT, CHECKOV) qui ne sont plus des moteurs de l'app. */
+    fun ofOrNull(tool: ToolName): ScannerEngine? = all.firstOrNull { it.tool == tool }
 
     val defaultEnabled: Set<ToolName> = all.filter { it.defaultEnabled }.map { it.tool }.toSet()
 }

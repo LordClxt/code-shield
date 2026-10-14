@@ -87,17 +87,18 @@ object Shield {
     }
 
     fun toolBadge(tool: codeshield.model.ToolName): Pair<String, Color> = when (tool) {
-        codeshield.model.ToolName.SEMGREP -> "S" to Color(0xFF4C9AE8)
+        codeshield.model.ToolName.SEMGREP -> "O" to Color(0xFF4C9AE8)
         codeshield.model.ToolName.GITLEAKS -> "G" to Color(0xFFEC7F3C)
         codeshield.model.ToolName.DEPENDENCY_CHECK -> "D" to Color(0xFF9B8AFB)
         codeshield.model.ToolName.TRIVY -> "T" to Color(0xFF2CB5A8)
         codeshield.model.ToolName.BANDIT -> "B" to Color(0xFFD9B43A)
-        codeshield.model.ToolName.OSV_SCANNER -> "O" to Color(0xFF3FB97F)
+        codeshield.model.ToolName.OSV_SCANNER -> "V" to Color(0xFF3FB97F)
         codeshield.model.ToolName.CHECKOV -> "C" to Color(0xFFD86FA4)
     }
 
     fun toolLabel(tool: codeshield.model.ToolName): String =
-        codeshield.scanner.ScannerEngines.of(tool).label
+        codeshield.scanner.ScannerEngines.ofOrNull(tool)?.label
+            ?: tool.name.lowercase().replaceFirstChar { it.uppercase() } // outil historique (Bandit, Checkov)
 
     fun category(c: codeshield.model.Category): Pair<String, Color> = when (c) {
         codeshield.model.Category.SAST -> "SAST" to Color(0xFF6E79D6)

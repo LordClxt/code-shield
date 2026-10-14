@@ -42,6 +42,17 @@ data class LlmSettings(
     val maxTokens: Int = 4096,
     /** Projets consultés récents (chemins absolus, max 10). */
     val recentProjects: List<String> = emptyList(),
+    /**
+     * Claude Code exécute ses commandes (ex. `bun install`) sans demander la permission.
+     * Désactivé par défaut : chaque commande est validée dans l'app.
+     */
+    val claudeAutoApprove: Boolean = false,
+    /** Agent de code qui corrige les failles (CLI installé en local). */
+    val codingAgent: codeshield.agent.CodingAgentKind = codeshield.agent.CodingAgentKind.CLAUDE_CODE,
+    /** Largeur du panneau de détail des failles (dp), 0 = automatique ; ajustée à la souris. */
+    val detailPaneWidth: Int = 0,
+    /** Largeur du panneau des groupes (dp), 0 = défaut. */
+    val groupsPaneWidth: Int = 0,
 ) {
     fun redacted(): String = if (apiKey.isBlank()) "(vide)" else "•••${apiKey.takeLast(4)}"
 

@@ -106,7 +106,8 @@ fun ShieldButton(
         } else if (leadingIcon != null) {
             Icon(leadingIcon, null, tint = fgColor, modifier = Modifier.size(size.icon))
         }
-        Text(text, color = fgColor, fontSize = if (size == ButtonSize.Sm) TypeScale.label else TypeScale.body, fontWeight = FontWeight.Medium, maxLines = 1)
+        // Texte vide : bouton icône seule (en-têtes compactés).
+        if (text.isNotEmpty()) Text(text, color = fgColor, fontSize = if (size == ButtonSize.Sm) TypeScale.label else TypeScale.body, fontWeight = FontWeight.Medium, maxLines = 1)
         trailing?.invoke()
     }
 }

@@ -32,13 +32,28 @@ class ClaudeCodeFixTest {
     }
 
     @Test
-    fun commandIsHeadlessWithoutBash() {
+    fun commandAsksPermissionForEverythingButFileEdits() {
         val cmd = ClaudeCodeFix.command("/bin/claude")
         assertEquals(listOf("/bin/claude", "-p"), cmd.take(2))
-        assertTrue(cmd.containsAll(listOf("--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose")))
+        assertEquals("stdio", cmd[cmd.indexOf("--permission-prompt-tool") + 1])
+        assertEquals("stream-json", cmd[cmd.indexOf("--input-format") + 1])
         val tools = cmd[cmd.indexOf("--allowedTools") + 1]
         assertTrue("Edit" in tools && "Read" in tools)
-        assertFalse("Bash" in tools)
+        assertFalse("Bash" in tools, "les commandes passent par une demande de permission")
+    }
+
+    @Test
+    fun parsesPermissionRequestAndBuildsResponses() {
+        val line = """{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash",""" +
+            """"input":{"command":"bun install","description":"Regenerate lockfile"},"description":"Regenerate lockfile"}}"""
+        val req = parseClaudeStreamLine(line).single() as AgentEvent.PermissionRequest
+        assertEquals("r1", req.requestId)
+        assertEquals("bun install", req.summary)
+        assertEquals("Regenerate lockfile", req.description)
+        val allow = ClaudeCodeFix.allowResponse("r1", req.input)
+        assertTrue("\"request_id\":\"r1\"" in allow && "\"behavior\":\"allow\"" in allow && "bun install" in allow, allow)
+        assertTrue("\"behavior\":\"deny\"" in ClaudeCodeFix.denyResponse("r1"))
+        assertTrue("\"type\":\"user\"" in ClaudeCodeFix.userMessage("fix"))
     }
 
     @Test
@@ -46,7 +61,7 @@ class ClaudeCodeFixTest {
         val line = """{"type":"assistant","message":{"content":[{"type":"text","text":"Je lis le fichier."},""" +
             """{"type":"tool_use","name":"Edit","input":{"file_path":"/p/app/run.py"}}]}}"""
         assertEquals(
-            listOf(ClaudeEvent.Text("Je lis le fichier."), ClaudeEvent.ToolUse("Edit", "/p/app/run.py")),
+            listOf(AgentEvent.Text("Je lis le fichier."), AgentEvent.ToolUse("Edit", "/p/app/run.py")),
             parseClaudeStreamLine(line),
         )
     }
@@ -54,11 +69,11 @@ class ClaudeCodeFixTest {
     @Test
     fun parsesResultAndIgnoresNoise() {
         assertEquals(
-            listOf(ClaudeEvent.Result("Corrigé.", isError = false)),
+            listOf(AgentEvent.Result("Corrigé.", isError = false)),
             parseClaudeStreamLine("""{"type":"result","subtype":"success","is_error":false,"result":"Corrigé."}"""),
         )
         assertEquals(
-            listOf(ClaudeEvent.Result("", isError = true)),
+            listOf(AgentEvent.Result("", isError = true)),
             parseClaudeStreamLine("""{"type":"result","subtype":"error_max_turns","is_error":true}"""),
         )
         assertTrue(parseClaudeStreamLine("""{"type":"system","subtype":"init"}""").isEmpty())

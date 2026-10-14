@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -34,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloseFullscreen
 import androidx.compose.material.icons.outlined.OpenInFull
@@ -66,12 +68,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import codeshield.agent.ClaudeCodeFix
+import codeshield.agent.CodingAgentKind
+import codeshield.ui.design.ResizeHandle
+import codeshield.ui.design.SegmentedControl
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.Dp
 import codeshield.logic.explainFinding
 import codeshield.logic.severityBlurb
 import codeshield.model.Finding
 import codeshield.model.Severity
 import codeshield.model.ToolName
 import codeshield.ui.ClaudeFixState
+import codeshield.ui.ClaudePermission
+import codeshield.ui.design.ShieldSwitch
 import codeshield.ui.FindingGroup
 import codeshield.ui.design.ButtonSize
 import codeshield.ui.design.ButtonVariant
@@ -140,6 +149,10 @@ fun FindingsSection(
     onCancelClaudeFix: () -> Unit = {},
     onFixCriticalAndHigh: (() -> Unit)? = null,
     onDismissClaudeFix: () -> Unit = {},
+    agent: AgentControls = AgentControls(),
+    /** Largeur enregistrée du panneau de détail (dp), 0 = automatique. */
+    detailWidthDp: Int = 0,
+    onDetailWidthChange: (Int) -> Unit = {},
 ) {
     // Filtres locaux (UI uniquement) : sévérités et outils.
     var sevFilter by remember { mutableStateOf(emptySet<Severity>()) }
@@ -175,53 +188,84 @@ fun FindingsSection(
         },
     ) {
         // ── En-tête ─────────────────────────────────────────────────────────
+        // Adaptatif : libellés complets, puis courts, puis icônes seules (avec infobulle)
+        // quand la place manque ; le fil d'Ariane se tronque au lieu de pousser les boutons.
+        BoxWithConstraints(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = Space.xl)) {
+        val density = when {
+            maxWidth >= 1000.dp -> HeaderDensity.Full
+            maxWidth >= 700.dp -> HeaderDensity.Short
+            else -> HeaderDensity.Icons
+        }
         Row(
-            modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = Space.xl),
+            modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            Text(strings.sidebarFindings, color = if (selectedGroup != null) Shield.TextMute else Shield.Text, fontSize = TypeScale.title, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable(enabled = selectedGroup != null, onClick = onClearFilter))
-            if (selectedGroup != null) {
-                Text("/", color = Shield.TextMute, fontSize = TypeScale.title)
-                Text(breadcrumb, color = Shield.Text, fontSize = TypeScale.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                ShieldIconButton(Icons.Outlined.Close, "Clear filter", onClearFilter, size = 22.dp)
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Text(strings.sidebarFindings, color = if (selectedGroup != null) Shield.TextMute else Shield.Text, fontSize = TypeScale.title, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, softWrap = false,
+                    modifier = Modifier.clickable(enabled = selectedGroup != null, onClick = onClearFilter))
+                if (selectedGroup != null) {
+                    Text("/", color = Shield.TextMute, fontSize = TypeScale.title)
+                    Text(breadcrumb, color = Shield.Text, fontSize = TypeScale.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    ShieldIconButton(Icons.Outlined.Close, "Clear filter", onClearFilter, size = 22.dp)
+                }
             }
-            Box(Modifier.weight(1f))
             ShieldTextField(
                 value = query,
                 onValueChange = onQuery,
                 placeholder = strings.findingsSearchPlaceholder,
                 leadingIcon = Icons.Outlined.Search,
-                trailing = { Kbd("⌘K") },
+                trailing = if (density == HeaderDensity.Full) ({ Kbd("⌘K") }) else null,
                 focusRequester = searchFocus,
-                modifier = Modifier.width(260.dp),
+                modifier = Modifier.width(
+                    when (density) {
+                        HeaderDensity.Full -> 260.dp
+                        HeaderDensity.Short -> 200.dp
+                        HeaderDensity.Icons -> 150.dp
+                    },
+                ),
             )
             if (onFixCriticalAndHigh != null) {
                 val urgent = remember(allFindings) { ClaudeCodeFix.batchTargets(allFindings).size }
-                ShieldButton(
-                    if (urgent > 0) "Fix $urgent critical/high" else "Fix critical/high",
+                HeaderAction(
+                    density = density,
+                    full = if (urgent > 0) "Fix $urgent critical/high" else "Fix critical/high",
+                    short = if (urgent > 0) "Fix $urgent" else "Fix",
+                    tooltip = "Fix the critical and high findings with ${agent.kind.label}",
+                    icon = Icons.Outlined.AutoFixHigh,
                     onClick = onFixCriticalAndHigh,
-                    leadingIcon = Icons.Outlined.AutoAwesome,
                     enabled = urgent > 0 && claudeFix?.running != true,
                     loading = claudeFix?.isBatch == true && claudeFix.running,
                 )
             }
-            ShieldButton(
-                if (aiTriageLoading) strings.findingsTriaging else strings.findingsTriageButton,
+            HeaderAction(
+                density = density,
+                full = if (aiTriageLoading) strings.findingsTriaging else strings.findingsTriageButton,
+                short = "Triage",
+                tooltip = strings.findingsTriageButton,
+                icon = Icons.Outlined.AutoAwesome,
                 onClick = onTriageAi,
-                leadingIcon = Icons.Outlined.AutoAwesome,
                 enabled = llmEnabled && visible.isNotEmpty() && !aiTriageLoading,
                 loading = aiTriageLoading,
             )
-            ShieldButton(
-                if (isScanning) strings.overviewScanning else strings.overviewRunScan,
+            HeaderAction(
+                density = density,
+                full = if (isScanning) strings.overviewScanning else strings.overviewRunScan,
+                short = "Scan",
+                tooltip = strings.overviewRunScan,
+                icon = Icons.Outlined.PlayArrow,
                 onClick = onRunScan,
-                variant = ButtonVariant.Primary,
-                leadingIcon = Icons.Outlined.PlayArrow,
                 enabled = canScan && !isScanning,
                 loading = isScanning,
+                primary = true,
             )
+        }
         }
         HDivider()
 
@@ -276,13 +320,17 @@ fun FindingsSection(
         var shown by remember { mutableStateOf(selected) }
         if (selected != null) shown = selected
         BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Le détail prend un peu plus de la moitié, sans écraser la liste.
-        val detailWidth = (maxWidth * 0.6f).coerceIn(480.dp, 760.dp)
+        // Largeur du détail : réglée à la souris (séparateur), sinon un peu plus de la moitié.
+        val auto = (maxWidth * 0.6f).coerceIn(480.dp, 760.dp)
+        val maxDetail = (maxWidth - 320.dp).coerceAtLeast(360.dp)
+        var dragWidth by remember { mutableStateOf<Dp?>(null) }
+        val detailWidth = (dragWidth ?: if (detailWidthDp > 0) detailWidthDp.dp else auto).coerceIn(360.dp, maxDetail)
         Row(Modifier.fillMaxSize()) {
             if (!(expanded && selected != null)) Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (claudeFix != null && claudeFix.isBatch) {
                     ClaudeBatchPanel(
                         fix = claudeFix,
+                        agent = agent,
                         onCancel = onCancelClaudeFix,
                         onDismiss = onDismissClaudeFix,
                         onRescan = onRunScan,
@@ -318,7 +366,16 @@ fun FindingsSection(
             ) {
                 val current = shown ?: return@AnimatedVisibility
                 Row(Modifier.fillMaxHeight()) {
-                    VDivider()
+                    if (expanded) {
+                        VDivider()
+                    } else {
+                        // Glisser vers la gauche élargit le détail ; double-clic : largeur automatique.
+                        ResizeHandle(
+                            onDrag = { dx -> dragWidth = (detailWidth - dx).coerceIn(360.dp, maxDetail) },
+                            onDragEnd = { dragWidth?.let { onDetailWidthChange(it.value.toInt()) } },
+                            onReset = { dragWidth = null; onDetailWidthChange(0) },
+                        )
+                    }
                     val fileFindings = remember(allFindings, current.filePath) { allFindings.filter { it.filePath == current.filePath } }
                     DetailPane(
                         selected = current, lines = fileLines, fileError = fileError, fileFindings = fileFindings,
@@ -329,6 +386,7 @@ fun FindingsSection(
                         claudeFix = claudeFix?.takeIf { it.findings == listOf(current) },
                         claudeBusy = claudeFix?.running == true,
                         onFixWithClaude = onFixWithClaude, onCancelClaudeFix = onCancelClaudeFix,
+                        agent = agent,
                         onRescan = onRunScan, canRescan = canScan && !isScanning,
                         modifier = (if (expanded) Modifier.weight(1f) else Modifier.width(detailWidth)).fillMaxHeight(),
                     )
@@ -503,6 +561,45 @@ private fun TriagePanel(
     }
 }
 
+/** Place disponible dans l'en-tête : libellés complets, courts, ou icônes seules. */
+private enum class HeaderDensity { Full, Short, Icons }
+
+/** Bouton d'en-tête qui se compacte avec la place disponible (infobulle quand le libellé est réduit). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun HeaderAction(
+    density: HeaderDensity,
+    full: String,
+    short: String,
+    tooltip: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    loading: Boolean,
+    primary: Boolean = false,
+) {
+    val variant = if (primary) ButtonVariant.Primary else ButtonVariant.Secondary
+    if (density == HeaderDensity.Full) {
+        ShieldButton(full, onClick = onClick, variant = variant, leadingIcon = icon, enabled = enabled, loading = loading)
+        return
+    }
+    androidx.compose.foundation.TooltipArea(
+        tooltip = {
+            Text(
+                tooltip, color = Shield.Text, fontSize = TypeScale.caption,
+                modifier = Modifier.background(Shield.Surface, Radius.md).padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        },
+        delayMillis = 400,
+    ) {
+        if (density == HeaderDensity.Short) {
+            ShieldButton(short, onClick = onClick, variant = variant, leadingIcon = icon, enabled = enabled, loading = loading)
+        } else {
+            ShieldButton("", onClick = onClick, variant = variant, leadingIcon = icon, enabled = enabled, loading = loading)
+        }
+    }
+}
+
 /** Panneau de détail : en-tête, métadonnées, onglets Code / Guide / AI. */
 @Composable
 private fun DetailPane(
@@ -524,6 +621,7 @@ private fun DetailPane(
     claudeBusy: Boolean,
     onFixWithClaude: ((Finding) -> Unit)?,
     onCancelClaudeFix: () -> Unit,
+    agent: AgentControls,
     onRescan: () -> Unit,
     canRescan: Boolean,
     modifier: Modifier = Modifier,
@@ -580,7 +678,7 @@ private fun DetailPane(
                 )
             }
             Tabs(
-                if (onFixWithClaude != null) listOf("Code", "Guide", "AI", "Claude Code") else listOf("Code", "Guide", "AI"),
+                if (onFixWithClaude != null) listOf("Code", "Guide", "AI", "Agent") else listOf("Code", "Guide", "AI"),
                 tab, { tab = it }, Modifier.padding(top = Space.sm),
             )
         }
@@ -617,6 +715,7 @@ private fun DetailPane(
                 3 -> ClaudeFixPane(
                     fix = claudeFix,
                     busy = claudeBusy,
+                    agent = agent,
                     onFix = { onFixWithClaude?.invoke(selected) },
                     onCancel = onCancelClaudeFix,
                     onRescan = onRescan,
@@ -654,10 +753,145 @@ private fun DetailPane(
     }
 }
 
+/**
+ * Demande de permission de Claude Code : ce qu'il veut exécuter, et la réponse de l'utilisateur.
+ * Claude attend la réponse avant de continuer.
+ */
+@Composable
+private fun PermissionCard(
+    permission: ClaudePermission,
+    pendingCount: Int,
+    onRespond: (requestId: String, allow: Boolean, approveAll: Boolean) -> Unit,
+) {
+    val isCommand = permission.tool == "Bash"
+    Column(
+        Modifier.fillMaxWidth().background(Shield.Warning.copy(alpha = 0.08f), Radius.md).padding(Space.md),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text(
+                if (isCommand) "Claude Code wants to run a command" else "Claude Code wants to use ${permission.tool}",
+                color = Shield.Text, fontSize = TypeScale.body, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
+            )
+            if (pendingCount > 1) TintBadge("+${pendingCount - 1} waiting", Shield.Warning)
+        }
+        permission.description?.let { Text(it, color = Shield.TextDim, fontSize = TypeScale.label) }
+        SelectionContainer {
+            Text(
+                (if (isCommand) "$ " else "") + permission.summary,
+                color = Shield.Text, fontSize = TypeScale.label, fontFamily = Shield.Mono,
+                modifier = Modifier.fillMaxWidth().background(Shield.Code, Radius.md).padding(Space.md),
+            )
+        }
+        Text("Claude is paused until you answer.", color = Shield.TextMute, fontSize = TypeScale.caption)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            ShieldButton("Allow", onClick = { onRespond(permission.requestId, true, false) }, variant = ButtonVariant.Primary, size = ButtonSize.Sm)
+            ShieldButton("Deny", onClick = { onRespond(permission.requestId, false, false) }, size = ButtonSize.Sm)
+            ShieldButton("Allow all for this fix", onClick = { onRespond(permission.requestId, true, true) }, variant = ButtonVariant.Ghost, size = ButtonSize.Sm)
+        }
+    }
+}
+
+/** Agent de code + son réglage « sans demander » (état et actions, remontés au ViewModel). */
+class AgentControls(
+    val kind: CodingAgentKind = CodingAgentKind.CLAUDE_CODE,
+    /** Agents installés (chemin du binaire, null = absent). */
+    val paths: Map<CodingAgentKind, String?> = emptyMap(),
+    val onSelect: (CodingAgentKind) -> Unit = {},
+    val autoApprove: Boolean = false,
+    val onAutoApprove: (Boolean) -> Unit = {},
+    val onRespondPermission: (requestId: String, allow: Boolean, approveAll: Boolean) -> Unit = { _, _, _ -> },
+    val onRunBlocked: (Int) -> Unit = {},
+    val onDismissBlocked: (Int) -> Unit = {},
+)
+
+/** Choix de l'agent (Claude Code, Codex, OpenCode) et lien d'installation s'il manque. */
+@Composable
+private fun AgentPicker(agent: AgentControls, enabled: Boolean) {
+    val kinds = CodingAgentKind.entries
+    val uri = LocalUriHandler.current
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SegmentedControl(
+            options = kinds.map { k -> if (agent.paths.isNotEmpty() && agent.paths[k] == null) "${k.label} (absent)" else k.label },
+            selectedIndex = kinds.indexOf(agent.kind),
+            onSelect = { if (enabled) agent.onSelect(kinds[it]) },
+            modifier = Modifier.width(330.dp),
+        )
+        if (agent.paths.isNotEmpty() && agent.paths[agent.kind] == null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${agent.kind.label} isn't installed.", color = Shield.Warning, fontSize = TypeScale.caption)
+                Text(
+                    "Install it",
+                    color = Shield.Accent, fontSize = TypeScale.caption,
+                    modifier = Modifier.clickable { runCatching { uri.openUri(agent.kind.installUrl) } }.pointerHoverIcon(PointerIcon.Hand),
+                )
+            }
+        }
+    }
+}
+
+/** Réglage persistant : l'agent exécute ses commandes sans demander. */
+@Composable
+private fun AutoApproveRow(agent: AgentControls) {
+    val label = agent.kind.label
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        ShieldSwitch(agent.autoApprove, agent.onAutoApprove)
+        Column(Modifier.weight(1f)) {
+            Text("Run commands without asking", color = Shield.Text, fontSize = TypeScale.label)
+            Text(
+                when {
+                    agent.autoApprove && agent.kind == CodingAgentKind.CODEX ->
+                        "Codex runs commands in its sandbox with network access, without confirmation."
+                    agent.autoApprove -> "$label runs commands (installs, scripts) in your project without confirmation."
+                    agent.kind.asksPermission -> "Each command $label wants to run waits for your approval."
+                    agent.kind == CodingAgentKind.CODEX ->
+                        "Codex can't ask while it runs: commands stay in its sandbox without network, and blocked ones are listed here for you to run."
+                    else -> "$label can't ask while it runs: blocked commands are listed here for you to run."
+                },
+                color = if (agent.autoApprove) Shield.Warning else Shield.TextMute, fontSize = TypeScale.caption,
+            )
+        }
+    }
+}
+
+/** Commandes que l'agent n'a pas pu lancer : l'utilisateur les exécute d'un clic dans le projet. */
+@Composable
+private fun BlockedCommandsCard(fix: ClaudeFixState, agent: AgentControls) {
+    if (fix.blockedCommands.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth().background(Shield.Warning.copy(alpha = 0.08f), Radius.md).padding(Space.md),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        Text("Commands ${fix.agent.label} couldn't run", color = Shield.Text, fontSize = TypeScale.body, fontWeight = FontWeight.SemiBold)
+        Text("Run them yourself in the project folder: output appears in the log below.", color = Shield.TextMute, fontSize = TypeScale.caption)
+        for (cmd in fix.blockedCommands) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                SelectionContainer(Modifier.weight(1f)) {
+                    Text(
+                        "$ ${cmd.command}",
+                        color = Shield.Text, fontSize = TypeScale.label, fontFamily = Shield.Mono,
+                        modifier = Modifier.fillMaxWidth().background(Shield.Code, Radius.md).padding(horizontal = Space.md, vertical = 8.dp),
+                    )
+                }
+                when {
+                    cmd.running -> CircularProgressIndicator(Modifier.size(14.dp), color = Shield.Accent, strokeWidth = 1.5.dp)
+                    cmd.exitCode == 0 -> TintBadge("Done", Shield.Success)
+                    else -> {
+                        if (cmd.exitCode != null) TintBadge("Exit ${cmd.exitCode}", Shield.Error)
+                        ShieldButton(if (cmd.exitCode == null) "Run" else "Retry", onClick = { agent.onRunBlocked(cmd.id) }, variant = ButtonVariant.Primary, size = ButtonSize.Sm)
+                        if (cmd.exitCode == null) ShieldIconButton(Icons.Outlined.Close, "Dismiss", { agent.onDismissBlocked(cmd.id) }, size = 22.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Bandeau de la correction groupée CRITICAL/HIGH (au-dessus de la liste). */
 @Composable
 private fun ClaudeBatchPanel(
     fix: ClaudeFixState,
+    agent: AgentControls,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
     onRescan: () -> Unit,
@@ -670,8 +904,8 @@ private fun ClaudeBatchPanel(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             androidx.compose.material3.Icon(Icons.Outlined.AutoAwesome, null, tint = Shield.Accent, modifier = Modifier.size(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Claude Code · ${fix.findings.size} critical/high findings", color = Shield.Text, fontSize = TypeScale.body, fontWeight = FontWeight.SemiBold)
-                Text("Runs locally in the project folder. Your code goes to Anthropic through Claude Code, never to the CodeShield server.", color = Shield.TextMute, fontSize = TypeScale.caption)
+                Text("${fix.agent.label} · ${fix.findings.size} critical/high findings", color = Shield.Text, fontSize = TypeScale.body, fontWeight = FontWeight.SemiBold)
+                Text("Runs locally in the project folder. Your code goes to the ${fix.agent.label} model provider, never to the CodeShield server.", color = Shield.TextMute, fontSize = TypeScale.caption)
             }
             if (fix.running) {
                 ShieldButton("Stop", onClick = onCancel, size = ButtonSize.Sm, leadingIcon = Icons.Outlined.Close)
@@ -682,10 +916,13 @@ private fun ClaudeBatchPanel(
                 ShieldIconButton(Icons.Outlined.Close, "Dismiss", onDismiss)
             }
         }
-        if (fix.running) {
+        AutoApproveRow(agent)
+        fix.pendingPermissions.firstOrNull()?.let { PermissionCard(it, fix.pendingPermissions.size, agent.onRespondPermission) }
+        BlockedCommandsCard(fix, agent)
+        if (fix.running && fix.pendingPermissions.isEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 CircularProgressIndicator(Modifier.size(14.dp), color = Shield.Accent, strokeWidth = 1.5.dp)
-                Text("Claude Code is working…", color = Shield.TextDim, fontSize = TypeScale.label)
+                Text("${fix.agent.label} is working…", color = Shield.TextDim, fontSize = TypeScale.label)
             }
         }
         if (fix.log.isNotEmpty() && fix.summary == null) {
@@ -701,7 +938,7 @@ private fun ClaudeBatchPanel(
         val summary = fix.summary
         if (summary != null) {
             if (fix.success == true) {
-                Callout("Claude Code finished. Review the changes, then re-scan to confirm.", CalloutKind.Success)
+                Callout("${fix.agent.label} finished. Review the changes, then re-scan to confirm.", CalloutKind.Success)
                 SelectionContainer {
                     Box(Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
                         MarkdownText(summary, color = Shield.TextDim, fontSize = TypeScale.body, lineHeight = 19.sp)
@@ -714,11 +951,12 @@ private fun ClaudeBatchPanel(
     }
 }
 
-/** Onglet Claude Code : lance la correction locale et suit sa progression. */
+/** Onglet Agent : lance la correction locale et suit sa progression. */
 @Composable
 private fun ClaudeFixPane(
     fix: ClaudeFixState?,
     busy: Boolean,
+    agent: AgentControls,
     onFix: () -> Unit,
     onCancel: () -> Unit,
     onRescan: () -> Unit,
@@ -733,15 +971,15 @@ private fun ClaudeFixPane(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Claude Code runs locally in the project folder, reads the file and edits it. " +
-                    "Your code goes to Anthropic through Claude Code, never to the CodeShield server.",
+                "${agent.kind.label} runs locally in the project folder, reads the file and edits it. " +
+                    "Your code goes to its model provider, never to the CodeShield server.",
                 color = Shield.TextMute, fontSize = TypeScale.label, modifier = Modifier.weight(1f).padding(end = Space.md),
             )
             if (fix?.running == true) {
                 ShieldButton("Stop", onClick = onCancel, size = ButtonSize.Sm, leadingIcon = Icons.Outlined.Close)
             } else {
                 ShieldButton(
-                    if (fix != null) "Fix again" else "Fix with Claude Code",
+                    if (fix != null) "Fix again" else "Fix with ${agent.kind.label}",
                     onClick = onFix,
                     variant = ButtonVariant.Primary,
                     leadingIcon = Icons.Outlined.AutoAwesome,
@@ -750,14 +988,18 @@ private fun ClaudeFixPane(
                 )
             }
         }
+        AgentPicker(agent, enabled = fix?.running != true)
+        AutoApproveRow(agent)
         if (fix == null) {
-            if (busy) Callout("Claude Code is already fixing other findings.")
+            if (busy) Callout("An agent is already fixing other findings.")
             return@Column
         }
-        if (fix.running) {
+        fix.pendingPermissions.firstOrNull()?.let { PermissionCard(it, fix.pendingPermissions.size, agent.onRespondPermission) }
+        BlockedCommandsCard(fix, agent)
+        if (fix.running && fix.pendingPermissions.isEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 CircularProgressIndicator(Modifier.size(14.dp), color = Shield.Accent, strokeWidth = 2.dp)
-                Text("Claude Code is working…", color = Shield.TextDim, fontSize = TypeScale.label)
+                Text("${fix.agent.label} is working…", color = Shield.TextDim, fontSize = TypeScale.label)
             }
         }
         if (fix.log.isNotEmpty()) {
@@ -772,7 +1014,7 @@ private fun ClaudeFixPane(
         val summary = fix.summary
         if (summary != null) {
             if (fix.success == true) {
-                Callout("Claude Code finished. Review the changes, then re-scan to confirm.", CalloutKind.Success)
+                Callout("${fix.agent.label} finished. Review the changes, then re-scan to confirm.", CalloutKind.Success)
                 SelectionContainer { MarkdownText(summary, color = Shield.TextDim, fontSize = TypeScale.body, lineHeight = 19.sp) }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     ShieldButton("Re-scan", onClick = onRescan, variant = ButtonVariant.Primary, leadingIcon = Icons.Outlined.PlayArrow, size = ButtonSize.Sm, enabled = canRescan)

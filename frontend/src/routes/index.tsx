@@ -165,7 +165,7 @@ function LandingPage() {
             </motion.div>
             <motion.div className="mt-8 grid justify-items-center gap-4" variants={stagger(0.08)}>
               <motion.p className="text-[13.5px] text-fog" variants={rise}>
-                Propulsé par sept scanners open source
+                Propulsé par cinq scanners open source
               </motion.p>
               <EngineStrip />
             </motion.div>
@@ -269,7 +269,7 @@ function LandingPage() {
         </section>
 
         <section className="grid gap-12 pb-28" aria-labelledby="moteurs">
-          <SectionTitle pill="Moteurs" id="moteurs" title="Sept scanners, lancés là où ils servent.">
+          <SectionTitle pill="Moteurs" id="moteurs" title="Cinq scanners, lancés là où ils servent.">
             L’app détecte ce que contient le projet, installe les binaires manquants et ne lance que les moteurs utiles.
           </SectionTitle>
           <CategoryCards />

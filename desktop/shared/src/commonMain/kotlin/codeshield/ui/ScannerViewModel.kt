@@ -1,7 +1,9 @@
 package codeshield.ui
 
 import codeshield.agent.ClaudeCodeFix
-import codeshield.agent.ClaudeEvent
+import codeshield.agent.CodingAgent
+import codeshield.agent.CodingAgentKind
+import codeshield.agent.AgentEvent
 import codeshield.agent.parseClaudeStreamLine
 import codeshield.model.Finding
 import codeshield.model.ScanPayload
@@ -31,6 +33,7 @@ import codeshield.tools.ToolInstaller
 import codeshield.tools.ToolState
 import codeshield.tools.ToolStatus
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +46,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -72,8 +76,10 @@ class ScannerViewModel(
     /** Lecture des rapports JSON (sans la limite de taille du visualiseur). */
     private val reportReader: FileReader = fileReader,
     private val maxParallelEngines: Int = 2,
-    /** Exécution avec entrée standard (Claude Code) ; par défaut, l'entrée est ignorée. */
-    private val inputRunner: InputCommandRunner = { command, workDir, _ -> runner(command, workDir) },
+    /** Commande shell d'une ligne (`sh -c` ; `cmd /c` sous Windows, fourni par desktopApp). */
+    private val shell: (String) -> List<String> = { listOf("sh", "-c", it) },
+        /** Session interactive (Claude Code) ; par défaut, l'entrée est ignorée. */
+    private val interactiveRunner: InteractiveCommandRunner = { command, workDir, _ -> runner(command, workDir) },
 ) {
     private var scanJob: Job? = null
     private val _state = MutableStateFlow(ScannerUiState(backendState = backendRunner.state.value))
@@ -102,7 +108,7 @@ class ScannerViewModel(
     /** Binaire effectif : installation gérée prioritaire, PATH système en fallback. */
     private fun effectiveBinary(tool: ToolName): String? =
         runCatching { installer.installedPath(tool) }.getOrNull()
-            ?: runCatching { locator(ScannerEngines.of(tool).binary) }.getOrNull()
+            ?: ScannerEngines.ofOrNull(tool)?.let { e -> runCatching { locator(e.binary) }.getOrNull() }
 
     fun toggleEngine(tool: ToolName, enabled: Boolean) =
         _state.update { it.copy(enabledEngines = if (enabled) it.enabledEngines + tool else it.enabledEngines - tool) }
@@ -119,7 +125,7 @@ class ScannerViewModel(
     /** Rafraîchit les statuts des moteurs (appelée au démarrage + après install). */
     fun refreshTools() {
         scope.launch(ioDispatcher) {
-            val statuses = ToolName.entries.associateWith { tool ->
+            val statuses = ScannerEngines.all.map { it.tool }.associateWith { tool ->
                 val managed = runCatching { installer.status(tool) }.getOrNull()
                 if (managed?.state == ToolState.READY && managed.path != null) {
                     managed
@@ -152,6 +158,9 @@ class ScannerViewModel(
             path.fold(
                 onSuccess = {
                     append("Installed ${tool.name.lowercase()} -> $it")
+                    // Prêt tout de suite : sans ça, la jauge restait pleine sur « Installing… »
+                    // le temps du rafraîchissement de tous les moteurs (sondes du PATH comprises).
+                    _state.update { s -> s.copy(toolStatuses = s.toolStatuses + (tool to ToolStatus(tool, ToolState.READY, path = it))) }
                     refreshTools()
                 },
                 onFailure = { e ->
@@ -270,7 +279,7 @@ class ScannerViewModel(
         val profile = runCatching { profiler(projectDir) }.getOrDefault(ProjectProfile.UNKNOWN)
         val engines = config.enginesFor(profile)
         for (tool in config.enabled - engines.map { it.tool }.toSet()) {
-            val e = ScannerEngines.of(tool)
+            val e = ScannerEngines.ofOrNull(tool) ?: continue
             append("[info] ${e.label} ignoré : rien à analyser dans ce projet (auto-détection).")
             setEngine(EngineRun(tool, EngineState.SKIPPED, message = "Rien à analyser"))
         }
@@ -849,6 +858,9 @@ class ScannerViewModel(
 
     private var claudeFixJob: Job? = null
 
+    /** Entrée standard de la session Claude Code en cours (réponses aux permissions). */
+    private var claudeInput: Channel<String>? = null
+
     /**
      * Lance Claude Code en local (`claude -p`) dans le dossier du projet pour corriger
      * la faille. Claude lit et modifie les fichiers lui-même ; l'app ne fait que lui
@@ -870,30 +882,59 @@ class ScannerViewModel(
         if (_state.value.claudeFix?.running == true) return
         val projectDir = _state.value.projectDir
         if (projectDir.isBlank()) return
-        _state.update { it.copy(claudeFix = ClaudeFixState(targets)) }
+        val settings = _state.value.llmSettings
+        val agent = CodingAgent.of(settings.codingAgent)
+        val autoApprove = settings.claudeAutoApprove
+        val tag = "[${agent.kind.binary}]"
+        _state.update { it.copy(claudeFix = ClaudeFixState(targets, agent = agent.kind)) }
         claudeFixJob = scope.launch(ioDispatcher) {
-            val binary = runCatching { locator("claude") }.getOrNull()
+            val binary = runCatching { locator(agent.kind.binary) }.getOrNull()
             if (binary == null) {
-                finishClaudeFix(targets, false, "Claude Code introuvable. Installez-le (https://claude.com/claude-code) puis lancez `claude` une fois pour vous connecter.")
+                finishClaudeFix(targets, false, "${agent.kind.label} introuvable. Installez-le (${agent.kind.installUrl}) puis lancez `${agent.kind.binary}` une fois pour vous connecter.")
                 return@launch
             }
-            val command = ClaudeCodeFix.command(binary)
+            val command = agent.command(binary, autoApprove)
             val prompt = ClaudeCodeFix.prompt(targets)
             val first = targets.first()
-            append("[claude] $ claude -p … " + if (targets.size > 1) "(${targets.size} failles CRITICAL/HIGH)" else "(${first.filePath}:${first.lineNumber})")
+            append("$tag $ ${agent.kind.binary} … " + if (targets.size > 1) "(${targets.size} failles CRITICAL/HIGH)" else "(${first.filePath}:${first.lineNumber})")
             val timeoutMs = ClaudeCodeFix.timeoutFor(targets.size)
+            // Entrée standard de la session : consigne, puis (Claude Code) réponses aux permissions.
+            val input = Channel<String>(Channel.UNLIMITED)
+            claudeInput = input
+            agent.initialInput(prompt).forEach { input.trySend(it) }
+            if (!agent.keepsInputOpen) input.close()
             var exitCode: Int? = null
-            var result: ClaudeEvent.Result? = null
+            var result: AgentEvent.Result? = null
+            var fatal: String? = null
+            var lastText: String? = null
             val stderr = mutableListOf<String>()
             val outcome = runCatching {
                 withTimeoutOrNull(timeoutMs) {
-                    inputRunner(command, projectDir, prompt).collect { line ->
+                    // Une erreur bloquante arrête la lecture : le processus est tué (OpenCode ne sort pas seul).
+                    interactiveRunner(command, projectDir, input).transformWhile { line -> emit(line); fatal == null }.collect { line ->
                         when (line) {
-                            is TerminalLine.Out -> for (event in parseClaudeStreamLine(line.text)) {
+                            is TerminalLine.Out -> for (event in agent.parse(line.text, autoApprove)) {
                                 when (event) {
-                                    is ClaudeEvent.Text -> logClaudeFix(targets, event.text)
-                                    is ClaudeEvent.ToolUse -> logClaudeFix(targets, "→ ${event.tool}" + (event.target?.let { " $it" } ?: ""))
-                                    is ClaudeEvent.Result -> result = event
+                                    is AgentEvent.Text -> {
+                                        lastText = event.text
+                                        logClaudeFix(targets, event.text)
+                                    }
+                                    is AgentEvent.ToolUse -> logClaudeFix(targets, "→ ${event.tool}" + (event.target?.let { " $it" } ?: ""))
+                                    is AgentEvent.ToolResult -> if (event.isError || event.text.isNotBlank()) {
+                                        val lines = event.text.lines().filter { it.isNotBlank() }
+                                        val shown = lines.take(4).joinToString("\n") { "  $it" } + if (lines.size > 4) "\n  …" else ""
+                                        logClaudeFix(targets, if (event.isError) "  ✗ ${lines.firstOrNull() ?: "échec"}" else shown)
+                                    }
+                                    is AgentEvent.PermissionRequest -> onClaudePermission(targets, event, input)
+                                    is AgentEvent.CommandBlocked -> onCommandBlocked(targets, event)
+                                    is AgentEvent.Fatal -> {
+                                        fatal = event.message
+                                        logClaudeFix(targets, "  ✗ ${event.message}")
+                                    }
+                                    is AgentEvent.Result -> {
+                                        result = event
+                                        input.close() // fin de session : l'agent se termine
+                                    }
                                 }
                             }
                             is TerminalLine.Err -> stderr += line.text
@@ -903,22 +944,136 @@ class ScannerViewModel(
                     true
                 }
             }
+            input.close()
+            claudeInput = null
             val failure = outcome.exceptionOrNull()
             if (failure is kotlinx.coroutines.CancellationException) {
                 finishClaudeFix(targets, false, "Correction annulée.")
                 throw failure
             }
             val r = result
+            val summary = r?.summary?.takeIf { it.isNotBlank() } ?: lastText
             when {
-                failure != null -> finishClaudeFix(targets, false, "Échec du lancement de Claude Code : ${failure.message}")
-                outcome.getOrNull() == null -> finishClaudeFix(targets, false, "Délai dépassé (${timeoutMs / 60_000} min) : Claude Code a été interrompu.")
-                r != null && !r.isError && exitCode == 0 -> finishClaudeFix(targets, true, r.summary.ifBlank { "Terminé." })
+                failure != null -> finishClaudeFix(targets, false, "Échec du lancement de ${agent.kind.label} : ${failure.message}")
+                fatal != null -> finishClaudeFix(targets, false, "${agent.kind.label} : $fatal")
+                outcome.getOrNull() == null -> finishClaudeFix(targets, false, "Délai dépassé (${timeoutMs / 60_000} min) : ${agent.kind.label} a été interrompu.")
+                r?.isError != true && exitCode == 0 -> finishClaudeFix(targets, true, summary ?: "Terminé.")
                 else -> finishClaudeFix(
                     targets, false,
-                    r?.summary?.takeIf { it.isNotBlank() }
-                        ?: stderr.takeLast(5).joinToString("\n").ifBlank { "Claude Code s'est arrêté (code ${exitCode ?: "?"})." },
+                    summary?.takeIf { r != null }
+                        ?: stderr.takeLast(5).joinToString("\n").ifBlank { "${agent.kind.label} s'est arrêté (code ${exitCode ?: "?"})." },
                 )
             }
+        }
+    }
+
+    private var blockedCounter = 0
+
+    /** Commande que l'agent n'a pas pu lancer : proposée à l'utilisateur ([runBlockedCommand]). */
+    private fun onCommandBlocked(targets: List<Finding>, event: AgentEvent.CommandBlocked) {
+        val cmd = BlockedCommand(++blockedCounter, event.command, event.reason)
+        append("[agent] Commande bloquée : ${event.command}")
+        logClaudeFix(targets, "⏸ Bloquée : ${event.command}")
+        _state.update { s ->
+            val cur = s.claudeFix?.takeIf { it.findings == targets } ?: return@update s
+            if (cur.blockedCommands.any { it.command == event.command }) return@update s
+            s.copy(claudeFix = cur.copy(blockedCommands = cur.blockedCommands + cmd))
+        }
+    }
+
+    /** Lance dans le projet une commande bloquée, après clic de l'utilisateur ; sortie dans le journal. */
+    fun runBlockedCommand(id: Int) {
+        val fix = _state.value.claudeFix ?: return
+        val cmd = fix.blockedCommands.find { it.id == id }?.takeIf { !it.running } ?: return
+        val projectDir = _state.value.projectDir.ifBlank { return }
+        updateBlocked(fix.findings, id) { it.copy(running = true, exitCode = null) }
+        logClaudeFix(fix.findings, "$ ${cmd.command}")
+        scope.launch(ioDispatcher) {
+            var code: Int? = null
+            runCatching {
+                runner(shell(cmd.command), projectDir).collect { line ->
+                    when (line) {
+                        is TerminalLine.Out -> logClaudeFix(fix.findings, "  ${line.text}")
+                        is TerminalLine.Err -> logClaudeFix(fix.findings, "  ${line.text}")
+                        is TerminalLine.Exit -> code = line.code
+                    }
+                }
+            }.onFailure { logClaudeFix(fix.findings, "  ✗ ${it.message}") }
+            val exit = code ?: -1
+            logClaudeFix(fix.findings, if (exit == 0) "✓ Terminé : ${cmd.command}" else "✗ Code $exit : ${cmd.command}")
+            updateBlocked(fix.findings, id) { it.copy(running = false, exitCode = exit) }
+        }
+    }
+
+    /** Retire une commande bloquée de la liste (l'utilisateur ne veut pas la lancer). */
+    fun dismissBlockedCommand(id: Int) {
+        val fix = _state.value.claudeFix ?: return
+        _state.update { s ->
+            val cur = s.claudeFix?.takeIf { it.findings == fix.findings } ?: return@update s
+            s.copy(claudeFix = cur.copy(blockedCommands = cur.blockedCommands.filterNot { it.id == id }))
+        }
+    }
+
+    private fun updateBlocked(targets: List<Finding>, id: Int, transform: (BlockedCommand) -> BlockedCommand) {
+        _state.update { s ->
+            val cur = s.claudeFix?.takeIf { it.findings == targets } ?: return@update s
+            s.copy(claudeFix = cur.copy(blockedCommands = cur.blockedCommands.map { if (it.id == id) transform(it) else it }))
+        }
+    }
+
+    /** Agents de code installés (affichés dans le sélecteur). */
+    fun refreshAgents() {
+        scope.launch(ioDispatcher) {
+            val paths = CodingAgentKind.entries.associateWith { runCatching { locator(it.binary) }.getOrNull() }
+            _state.update { it.copy(agentPaths = paths) }
+        }
+    }
+
+    /**
+     * Demande de permission de Claude Code : acceptée d'office si l'utilisateur a activé
+     * l'exécution sans confirmation (réglage) ou « tout autoriser » pour cette correction,
+     * sinon affichée dans l'app jusqu'à sa réponse ([respondClaudePermission]).
+     */
+    private fun onClaudePermission(targets: List<Finding>, event: AgentEvent.PermissionRequest, input: Channel<String>) {
+        val fix = _state.value.claudeFix?.takeIf { it.findings == targets } ?: return
+        if (_state.value.llmSettings.claudeAutoApprove || fix.approveAll) {
+            input.trySend(ClaudeCodeFix.allowResponse(event.requestId, event.input))
+            logClaudeFix(targets, "✓ ${event.tool} autorisé automatiquement : ${event.summary}")
+            return
+        }
+        val permission = ClaudePermission(event.requestId, event.tool, event.summary, event.description, event.input)
+        append("[claude] Permission demandée (${event.tool}) : ${event.summary}")
+        _state.update { s ->
+            val cur = s.claudeFix?.takeIf { it.findings == targets } ?: return@update s
+            s.copy(claudeFix = cur.copy(pendingPermissions = cur.pendingPermissions + permission))
+        }
+    }
+
+    /**
+     * Réponse de l'utilisateur à la demande affichée. [approveAll] : accepte celle-ci et
+     * toutes les suivantes jusqu'à la fin de cette correction.
+     */
+    fun respondClaudePermission(requestId: String, allow: Boolean, approveAll: Boolean = false) {
+        val input = claudeInput ?: return
+        val fix = _state.value.claudeFix ?: return
+        val toAnswer = if (allow && approveAll) fix.pendingPermissions else fix.pendingPermissions.filter { it.requestId == requestId }
+        if (toAnswer.isEmpty()) return
+        for (p in toAnswer) {
+            input.trySend(
+                if (allow) ClaudeCodeFix.allowResponse(p.requestId, p.input)
+                else ClaudeCodeFix.denyResponse(p.requestId, "L'utilisateur a refusé : ${p.summary}"),
+            )
+            logClaudeFix(fix.findings, (if (allow) "✓ Autorisé : " else "✗ Refusé : ") + p.summary)
+        }
+        val answered = toAnswer.map { it.requestId }.toSet()
+        _state.update { s ->
+            val cur = s.claudeFix?.takeIf { it.findings == fix.findings } ?: return@update s
+            s.copy(
+                claudeFix = cur.copy(
+                    pendingPermissions = cur.pendingPermissions.filterNot { it.requestId in answered },
+                    approveAll = cur.approveAll || (allow && approveAll),
+                ),
+            )
         }
     }
 
@@ -933,7 +1088,7 @@ class ScannerViewModel(
     }
 
     private fun logClaudeFix(targets: List<Finding>, line: String) {
-        append("[claude] ${line.lineSequence().first()}")
+        append("[agent] ${line.lineSequence().first()}")
         _state.update { s ->
             val fix = s.claudeFix?.takeIf { it.findings == targets } ?: return@update s
             s.copy(claudeFix = fix.copy(log = (fix.log + line).takeLast(300)))
@@ -941,10 +1096,10 @@ class ScannerViewModel(
     }
 
     private fun finishClaudeFix(targets: List<Finding>, success: Boolean, summary: String) {
-        append(if (success) "[claude] Correction terminée : relancez le scan pour confirmer." else "[claude] [error] ${summary.lineSequence().first()}")
+        append(if (success) "[agent] Correction terminée : relancez le scan pour confirmer." else "[agent] [error] ${summary.lineSequence().first()}")
         _state.update { s ->
             val fix = s.claudeFix?.takeIf { it.findings == targets } ?: return@update s
-            s.copy(claudeFix = fix.copy(running = false, success = success, summary = summary))
+            s.copy(claudeFix = fix.copy(running = false, success = success, summary = summary, pendingPermissions = emptyList()))
         }
     }
 

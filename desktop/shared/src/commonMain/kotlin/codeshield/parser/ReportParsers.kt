@@ -44,7 +44,7 @@ internal fun normalizeCwes(raw: List<String>): List<String> = raw.flatMap { s ->
 
 /**
  * Chemin relatif à la racine scannée, séparateurs `/`. Les outils renvoient
- * selon les cas `./a.py`, `/abs/proj/a.py` ou `/a.tf` (checkov) : on unifie,
+ * selon les cas `./a.py`, `/abs/proj/a.py` ou `/a.tf` : on unifie,
  * pour que le visualiseur relise le bon fichier et que l'identité backend
  * soit indépendante de la machine.
  */

@@ -20,17 +20,9 @@ data class ToolStatus(
     val progress: Float? = null,
     val error: String? = null,
 ) {
-    /**
-     * Auto-installation proposée pour les moteurs publiés en binaire autonome.
-     * Exclus : Dependency-Check (JVM + base NVD), Bandit et Checkov (paquets Python,
-     * utilisés seulement s'ils sont déjà installés).
-     */
+    /** Auto-installation proposée pour tous les moteurs sauf Dependency-Check (JVM + base NVD). */
     val autoInstallable: Boolean
-        get() = tool !in MANUAL_ONLY
-
-    companion object {
-        val MANUAL_ONLY = setOf(ToolName.DEPENDENCY_CHECK, ToolName.BANDIT, ToolName.CHECKOV)
-    }
+        get() = tool != ToolName.DEPENDENCY_CHECK
 }
 
 /**
@@ -46,8 +38,19 @@ interface ToolInstaller {
 
     /**
      * Télécharge + vérifie + installe le moteur.
-     * @param onProgress 0..1 (téléchargement), -1f = progression indéterminée.
+     * @param onProgress 0..1 pendant le téléchargement (ou [InstallProgress.UNKNOWN_SIZE]),
+     *   puis [InstallProgress.VERIFYING]. Pas d'appel à 1f final : le moteur est prêt
+     *   quand `install` retourne.
      * @return chemin du binaire installé.
      */
     suspend fun install(tool: ToolName, onProgress: (Float) -> Unit): Result<String>
+}
+
+/** Valeurs spéciales de progression d'installation (hors de 0..1). */
+object InstallProgress {
+    /** Téléchargement fini : vérification SHA-256 et installation, durée inconnue. */
+    const val VERIFYING: Float = -1f
+
+    /** Téléchargement en cours, taille non annoncée par le serveur. */
+    const val UNKNOWN_SIZE: Float = -2f
 }

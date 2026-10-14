@@ -4,13 +4,16 @@ import codeshield.model.ToolName
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ScannerEngineTest {
 
     @Test
-    fun everyToolHasAnEngine() {
-        assertEquals(ToolName.entries.toSet(), ScannerEngines.all.map { it.tool }.toSet())
+    fun everyActiveToolHasAnEngine() {
+        // Tous les outils du contrat ont un moteur, sauf les identifiants historiques.
+        val retired = setOf(ToolName.BANDIT, ToolName.CHECKOV)
+        assertEquals(ToolName.entries.toSet() - retired, ScannerEngines.all.map { it.tool }.toSet())
     }
 
     @Test
@@ -47,9 +50,10 @@ class ScannerEngineTest {
     }
 
     @Test
-    fun pythonEnginesAreOptIn() {
-        assertFalse(BanditEngine.defaultEnabled)
-        assertFalse(CheckovEngine.defaultEnabled)
+    fun retiredPythonEnginesAreGone() {
+        // Bandit et Checkov retirés : identifiants gardés pour l'historique, plus aucun moteur.
+        assertNull(ScannerEngines.ofOrNull(ToolName.BANDIT))
+        assertNull(ScannerEngines.ofOrNull(ToolName.CHECKOV))
         assertTrue(ScannerEngines.defaultEnabled.containsAll(setOf(ToolName.SEMGREP, ToolName.GITLEAKS, ToolName.TRIVY)))
     }
 
@@ -75,15 +79,13 @@ class ScannerEngineTest {
         val jsOnly = ProjectProfile(extensions = setOf("ts", "json"), fileNames = setOf("package.json", "index.ts"))
         val config = ScannerConfig(projectDir = "/p", enabled = ToolName.entries.toSet())
         val tools = config.enginesFor(jsOnly).map { it.tool }
-        assertFalse(ToolName.BANDIT in tools, "pas de Python")
-        assertFalse(ToolName.CHECKOV in tools, "pas d'IaC")
         assertFalse(ToolName.OSV_SCANNER in tools, "pas de lockfile")
         assertTrue(ToolName.SEMGREP in tools && ToolName.GITLEAKS in tools && ToolName.TRIVY in tools)
 
         val withLock = jsOnly.copy(fileNames = jsOnly.fileNames + "package-lock.json")
         assertTrue(ToolName.OSV_SCANNER in config.enginesFor(withLock).map { it.tool })
-        assertEquals(7, config.copy(autoDetect = false).enginesFor(jsOnly).size)
-        assertEquals(7, config.enginesFor(ProjectProfile.UNKNOWN).size)
+        assertEquals(ScannerEngines.all.size, config.copy(autoDetect = false).enginesFor(jsOnly).size)
+        assertEquals(ScannerEngines.all.size, config.enginesFor(ProjectProfile.UNKNOWN).size)
     }
 
     @Test

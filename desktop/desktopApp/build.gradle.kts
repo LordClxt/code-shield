@@ -25,6 +25,11 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "org.example.desktop.MainKt"
+        // Nom de l'app dans la barre de menus et le Dock macOS (sinon « MainKt » avec ./gradlew run).
+        // Options propres à la JVM macOS : ajoutées seulement quand on construit sur un Mac.
+        if (System.getProperty("os.name").contains("Mac", ignoreCase = true)) {
+            jvmArgs("-Xdock:name=CodeShield", "-Dapple.awt.application.name=CodeShield")
+        }
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

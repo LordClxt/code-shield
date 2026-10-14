@@ -16,8 +16,12 @@ sealed interface TerminalLine {
 /** Exécution d'une commande CLI diffusée en continu (adaptée en jvmMain via ProcessRunner). */
 typealias CommandRunner = (command: List<String>, workDir: String?) -> Flow<TerminalLine>
 
-/** Variante qui écrit [stdin] sur l'entrée standard du processus (consigne de Claude Code). */
-typealias InputCommandRunner = (command: List<String>, workDir: String?, stdin: String) -> Flow<TerminalLine>
+/**
+ * Session interactive : chaque ligne envoyée dans [input] est écrite sur l'entrée standard
+ * (consigne puis réponses aux permissions de Claude Code). Fermer le canal ferme l'entrée.
+ */
+typealias InteractiveCommandRunner =
+    (command: List<String>, workDir: String?, input: kotlinx.coroutines.channels.ReceiveChannel<String>) -> Flow<TerminalLine>
 
 /** Lecture locale d'un fichier en lignes (Local Diff Viewer — jamais envoyée au réseau). */
 typealias FileReader = (path: String) -> List<String>
@@ -92,6 +96,27 @@ data class WorkspaceTabState(
     }
 }
 
+/** Demande de permission de Claude Code (ex. lancer `bun install`). */
+data class ClaudePermission(
+    val requestId: String,
+    val tool: String,
+    /** Ce qui sera exécuté : la commande pour Bash, sinon le fichier visé. */
+    val summary: String,
+    val description: String? = null,
+    /** Entrée de l'outil, renvoyée telle quelle si l'utilisateur accepte. */
+    val input: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+)
+
+/** Commande que l'agent n'a pas pu exécuter ; l'utilisateur peut la lancer depuis l'app. */
+data class BlockedCommand(
+    val id: Int,
+    val command: String,
+    val reason: String,
+    val running: Boolean = false,
+    /** Code de sortie une fois lancée par l'utilisateur. */
+    val exitCode: Int? = null,
+)
+
 /** Correction d'une faille par Claude Code (CLI local, lancé dans le dossier du projet). */
 data class ClaudeFixState(
     /** Une faille (onglet Claude Code) ou un lot CRITICAL/HIGH (bandeau au-dessus de la liste). */
@@ -102,6 +127,14 @@ data class ClaudeFixState(
     /** Résumé final de Claude (ou cause de l'échec). */
     val summary: String? = null,
     val success: Boolean? = null,
+    /** Demandes de permission en attente (la première est affichée). */
+    val pendingPermissions: List<ClaudePermission> = emptyList(),
+    /** « Tout autoriser pour cette correction » : plus de demande jusqu'à la fin de la session. */
+    val approveAll: Boolean = false,
+    /** Agent qui mène la correction. */
+    val agent: codeshield.agent.CodingAgentKind = codeshield.agent.CodingAgentKind.CLAUDE_CODE,
+    /** Commandes que l'agent n'a pas pu lancer, proposées à l'utilisateur (Codex, OpenCode). */
+    val blockedCommands: List<BlockedCommand> = emptyList(),
 ) {
     val isBatch: Boolean get() = findings.size > 1
 }
@@ -113,7 +146,7 @@ data class ScannerUiState(
     val projectDir: String = "",
     /** Moteurs cochés (registre ScannerEngines). */
     val enabledEngines: Set<ToolName> = codeshield.scanner.ScannerEngines.defaultEnabled,
-    /** Ignore automatiquement les moteurs sans cible (ex. Bandit sans .py). */
+    /** Ignore automatiquement les moteurs sans cible (ex. OSV-Scanner sans lockfile). */
     val autoDetectEngines: Boolean = true,
     /** Avancement par moteur du scan en cours / dernier scan. */
     val engineRuns: Map<ToolName, EngineRun> = emptyMap(),
@@ -174,6 +207,8 @@ data class ScannerUiState(
     val pentestAnalysis: codeshield.pentest.ProjectAnalysis? = null,
     /** Analyse du projet en cours (spinner sur "Analyser"). */
     val isAnalyzing: Boolean = false,
+    /** Agents de code installés (chemin du binaire, null = absent). */
+    val agentPaths: Map<codeshield.agent.CodingAgentKind, String?> = emptyMap(),
     /** Dernière correction Claude Code lancée (affichée si la faille est sélectionnée). */
     val claudeFix: ClaudeFixState? = null,
 ) {

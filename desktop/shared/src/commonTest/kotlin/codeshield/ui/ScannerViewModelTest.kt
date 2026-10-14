@@ -44,7 +44,7 @@ class ScannerViewModelTest {
         locator: BinaryLocator = { "/usr/bin/$it" },
         dirChecker: DirChecker = { true },
         installer: ToolInstaller = NoManagedTools,
-        inputRunner: InputCommandRunner = { cmd, dir, _ -> runner(cmd, dir) },
+        interactiveRunner: InteractiveCommandRunner = { cmd, dir, _ -> runner(cmd, dir) },
     ) = ScannerViewModel(
         scope = this,
         runner = runner,
@@ -54,7 +54,7 @@ class ScannerViewModelTest {
         dirChecker = dirChecker,
         installer = installer,
         ioDispatcher = StandardTestDispatcher(testScheduler),
-        inputRunner = inputRunner,
+        interactiveRunner = interactiveRunner,
     )
 
     @Test
@@ -227,8 +227,8 @@ class ScannerViewModelTest {
     @Test
     fun fixCriticalAndHighSendsOneSessionWithOnlyUrgentFindings() = runTest {
         var prompt: String? = null
-        val vm = viewModel(inputRunner = { _, _, stdin ->
-            prompt = stdin
+        val vm = viewModel(interactiveRunner = { _, _, input ->
+            prompt = input.tryReceive().getOrNull()
             flow {
                 emit(TerminalLine.Out("""{"type":"result","subtype":"success","is_error":false,"result":"2 corrigées."}"""))
                 emit(TerminalLine.Exit("claude", 0))
@@ -245,5 +245,111 @@ class ScannerViewModelTest {
         assertTrue("db.py" in prompt!! && "style.css" !in prompt!!, prompt)
         vm.dismissClaudeFix()
         assertEquals(null, vm.state.value.claudeFix)
+    }
+
+    private fun permissionLine(id: String, command: String) =
+        """{"type":"control_request","request_id":"$id","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"$command"},"description":"Install"}}"""
+
+    /** Session Claude simulée : demande une permission puis attend la réponse sur l'entrée. */
+    private fun permissionSession(sent: MutableList<String>): InteractiveCommandRunner = { _, _, input ->
+        flow {
+            sent += input.receive() // consigne
+            emit(TerminalLine.Out(permissionLine("req-1", "bun install")))
+            sent += input.receive() // réponse de l'app
+            emit(TerminalLine.Out("""{"type":"result","subtype":"success","is_error":false,"result":"ok"}"""))
+            emit(TerminalLine.Exit("claude", 0))
+        }
+    }
+
+    @Test
+    fun permissionRequestWaitsForUserThenAllows() = runTest {
+        val sent = mutableListOf<String>()
+        val vm = viewModel(interactiveRunner = permissionSession(sent))
+        vm.update { it.copy(projectDir = "/proj") }
+        vm.fixWithClaudeCode(claudeFinding)
+        runCurrent() // sans avancer l'horloge : le délai max de la session ne doit pas expirer
+        val pending = vm.state.value.claudeFix!!.pendingPermissions.single()
+        assertEquals("bun install", pending.summary)
+        assertTrue(vm.state.value.claudeFix!!.running, "Claude attend la réponse")
+        vm.respondClaudePermission("req-1", allow = true)
+        advanceUntilIdle()
+        assertTrue(sent[1].contains("\"behavior\":\"allow\"") && sent[1].contains("req-1"), sent[1])
+        val fix = vm.state.value.claudeFix!!
+        assertTrue(fix.pendingPermissions.isEmpty())
+        assertEquals(true, fix.success)
+    }
+
+    @Test
+    fun deniedPermissionIsSentAsDeny() = runTest {
+        val sent = mutableListOf<String>()
+        val vm = viewModel(interactiveRunner = permissionSession(sent))
+        vm.update { it.copy(projectDir = "/proj") }
+        vm.fixWithClaudeCode(claudeFinding)
+        runCurrent() // sans avancer l'horloge : le délai max de la session ne doit pas expirer
+        vm.respondClaudePermission("req-1", allow = false)
+        advanceUntilIdle()
+        assertTrue(sent[1].contains("\"behavior\":\"deny\""), sent[1])
+    }
+
+    @Test
+    fun autoApproveSettingAnswersWithoutAsking() = runTest {
+        val sent = mutableListOf<String>()
+        val vm = viewModel(interactiveRunner = permissionSession(sent))
+        vm.update { it.copy(projectDir = "/proj", llmSettings = it.llmSettings.copy(claudeAutoApprove = true)) }
+        vm.fixWithClaudeCode(claudeFinding)
+        advanceUntilIdle()
+        assertTrue(sent[1].contains("\"behavior\":\"allow\""), sent.toString())
+        val fix = vm.state.value.claudeFix!!
+        assertTrue(fix.pendingPermissions.isEmpty())
+        assertTrue(fix.log.any { "autorisé automatiquement" in it }, fix.log.toString())
+        assertEquals(true, fix.success)
+    }
+
+    @Test
+    fun selectedAgentIsLaunchedAndBlockedCommandRunsOnClick() = runTest {
+        var agentCommand: List<String>? = null
+        val ran = mutableListOf<List<String>>()
+        val vm = viewModel(
+            runner = { cmd, _ -> ran += cmd; flow { emit(TerminalLine.Out("added 3 packages")); emit(TerminalLine.Exit(cmd.first(), 0)) } },
+            interactiveRunner = { cmd, _, _ ->
+                agentCommand = cmd
+                flow {
+                    emit(TerminalLine.Out("""{"type":"tool_use","part":{"tool":"bash","state":{"status":"error","input":{"command":"bun install"},"error":"permission rejected"}}}"""))
+                    emit(TerminalLine.Out("""{"type":"text","part":{"text":"Override ajouté ; lancez bun install."}}"""))
+                    emit(TerminalLine.Exit("opencode", 0))
+                }
+            },
+        )
+        vm.update { it.copy(projectDir = "/proj", llmSettings = it.llmSettings.copy(codingAgent = codeshield.agent.CodingAgentKind.OPENCODE)) }
+        vm.fixWithClaudeCode(claudeFinding)
+        advanceUntilIdle()
+        assertEquals("/usr/bin/opencode", agentCommand!!.first())
+        val fix = vm.state.value.claudeFix!!
+        assertEquals(true, fix.success)
+        assertEquals("Override ajouté ; lancez bun install.", fix.summary)
+        val blocked = fix.blockedCommands.single()
+        assertEquals("bun install", blocked.command)
+        vm.runBlockedCommand(blocked.id)
+        advanceUntilIdle()
+        assertEquals(listOf("sh", "-c", "bun install"), ran.last())
+        assertEquals(0, vm.state.value.claudeFix!!.blockedCommands.single().exitCode)
+        assertTrue(vm.state.value.claudeFix!!.log.any { "added 3 packages" in it })
+    }
+
+    @Test
+    fun fatalAgentErrorStopsTheSession() = runTest {
+        val vm = viewModel(interactiveRunner = { _, _, _ ->
+            flow {
+                emit(TerminalLine.Out("""{"type":"error","error":{"name":"APIError","data":{"message":"Insufficient account funds"}}}"""))
+                kotlinx.coroutines.awaitCancellation() // OpenCode ne sort pas seul après l'erreur
+            }
+        })
+        vm.update { it.copy(projectDir = "/proj", llmSettings = it.llmSettings.copy(codingAgent = codeshield.agent.CodingAgentKind.OPENCODE)) }
+        vm.fixWithClaudeCode(claudeFinding)
+        runCurrent()
+        val fix = vm.state.value.claudeFix!!
+        assertFalse(fix.running)
+        assertEquals(false, fix.success)
+        assertTrue("Insufficient account funds" in fix.summary!!, fix.summary)
     }
 }

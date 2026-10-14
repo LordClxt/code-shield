@@ -37,11 +37,12 @@ export const STATUS_META: Record<VulnStatus, { label: string; tone: 'open' | 'pr
 }
 
 export const TOOL_LABEL: Record<ToolName, string> = {
-  SEMGREP: 'Semgrep',
+  // Moteur SAST au format Semgrep, exécuté par Opengrep depuis la migration.
+  SEMGREP: 'Opengrep',
   GITLEAKS: 'Gitleaks',
   TRIVY: 'Trivy',
-  BANDIT: 'Bandit',
-  CHECKOV: 'Checkov',
+  BANDIT: 'Bandit', // historique (moteur retiré)
+  CHECKOV: 'Checkov', // historique (moteur retiré)
   OSV_SCANNER: 'OSV-Scanner',
   DEPENDENCY_CHECK: 'Dependency-Check',
 }

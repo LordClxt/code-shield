@@ -397,6 +397,11 @@ components:
       enum: [CRITICAL, HIGH, MEDIUM, LOW]
     ToolName:
       type: string
+      description: >-
+        Moteur à l'origine de la faille. SEMGREP désigne le moteur SAST au format
+        Semgrep (exécuté par Opengrep côté desktop, mêmes règles et identifiants).
+        BANDIT et CHECKOV sont historiques : ces moteurs sont retirés et ne produisent
+        plus de failles ; les valeurs restent valides pour les données existantes.
       enum: [SEMGREP, GITLEAKS, DEPENDENCY_CHECK, TRIVY, BANDIT, OSV_SCANNER, CHECKOV]
     Category:
       type: string

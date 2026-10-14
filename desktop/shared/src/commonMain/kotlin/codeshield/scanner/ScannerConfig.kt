@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 data class ScannerConfig(
     val projectDir: String,
     val enabled: Set<ToolName> = ScannerEngines.defaultEnabled,
-    /** Ignore les moteurs sans rien à analyser (ex. Bandit sans fichier .py). */
+    /** Ignore les moteurs sans rien à analyser (ex. OSV-Scanner sans lockfile). */
     val autoDetect: Boolean = true,
     val semgrepConfig: String = DEFAULT_SEMGREP_CONFIG,
 ) {

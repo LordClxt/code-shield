@@ -56,8 +56,9 @@ class SnapshotGallery {
             column = 13, endColumn = 40, cwe = listOf("CWE-798")),
         Finding(ToolName.TRIVY, "CVE-2023-30861", "requirements.txt", 3, Severity.HIGH, "Flask session cookie disclosure",
             packageName = "flask", installedVersion = "2.2.2", fixedVersion = "2.2.5"),
-        Finding(ToolName.BANDIT, "B201", "app/main.py", 42, Severity.MEDIUM, "Flask app run with debug=True"),
-        Finding(ToolName.CHECKOV, "CKV_DOCKER_3", "Dockerfile", 1, Severity.MEDIUM, "Container runs as root"),
+        Finding(ToolName.SEMGREP, "python.flask.security.audit.debug-enabled", "app/main.py", 42, Severity.MEDIUM,
+            "Flask app run with debug=True"),
+        Finding(ToolName.TRIVY, "DS002", "Dockerfile", 1, Severity.MEDIUM, "Container runs as root"),
         Finding(ToolName.SEMGREP, "python.lang.security.audit.md5-used", "app/auth/hash.py", 7, Severity.LOW,
             "Weak hash algorithm (MD5)", cwe = listOf("CWE-327")),
         Finding(ToolName.OSV_SCANNER, "GHSA-xxxx", "requirements.txt", 5, Severity.LOW, "Jinja2 sandbox escape"),
@@ -106,11 +107,54 @@ class SnapshotGallery {
         shot("overview") { Shell(AppSection.OVERVIEW) }
         shot("findings") { Shell(AppSection.FINDINGS, withSelection = false) }
         shot("findings-detail") { Shell(AppSection.FINDINGS) }
+        // En-tête adaptatif : fenêtre minimale (1100) et intermédiaire (1280), groupe sélectionné.
+        shot("header-1100", width = 1100, height = 300) { Shell(AppSection.FINDINGS, withSelection = false, group = "frontend/src/app/core/services") }
+        shot("header-1280", width = 1280, height = 300) { Shell(AppSection.FINDINGS, withSelection = false, group = "(root)") }
+        // Agent : Claude Code attend l'accord pour une commande.
+        shot("agent-permission") {
+            Shell(
+                AppSection.FINDINGS,
+                agentFix = codeshield.ui.ClaudeFixState(
+                    findings = listOf(findings[0]),
+                    log = listOf("→ Read app/routes/users.py", "→ Edit app/routes/users.py", "Requête paramétrée en place ; je régénère le lockfile."),
+                    pendingPermissions = listOf(codeshield.ui.ClaudePermission("r1", "Bash", "bun install", "Regenerate the lockfile with the new override")),
+                ),
+            )
+        }
+        // Agent : OpenCode a fini, une commande refusée d'office attend l'utilisateur.
+        shot("agent-blocked") {
+            Shell(
+                AppSection.FINDINGS,
+                agentKind = codeshield.agent.CodingAgentKind.OPENCODE,
+                agentFix = codeshield.ui.ClaudeFixState(
+                    findings = listOf(findings[0]),
+                    agent = codeshield.agent.CodingAgentKind.OPENCODE,
+                    running = false, success = true,
+                    summary = "Override `piscina: ^5.3.2` ajouté dans package.json. Lancez `bun install` pour mettre à jour le lockfile.",
+                    log = listOf("→ Edit package.json", "⏸ Bloquée : bun install"),
+                    blockedCommands = listOf(codeshield.ui.BlockedCommand(1, "bun install", "Permission refusée d'office par OpenCode.")),
+                ),
+            )
+        }
+        // Téléchargements : un moteur en cours (60 %), un en vérification (indéterminé).
+        shot("overview-installing") {
+            Shell(AppSection.OVERVIEW, override = state.copy(toolStatuses = state.toolStatuses +
+                (ToolName.TRIVY to ToolStatus(ToolName.TRIVY, ToolState.INSTALLING, progress = 0.6f)) +
+                (ToolName.OSV_SCANNER to ToolStatus(ToolName.OSV_SCANNER, ToolState.INSTALLING, progress = -1f))))
+        }
     }
 
     @Composable
-    private fun Shell(section: AppSection, withSelection: Boolean = true) {
-        val s = if (withSelection) state else state.copy(selected = null)
+    private fun Shell(
+        section: AppSection,
+        withSelection: Boolean = true,
+        override: ScannerUiState? = null,
+        agentFix: codeshield.ui.ClaudeFixState? = null,
+        agentKind: codeshield.agent.CodingAgentKind = codeshield.agent.CodingAgentKind.CLAUDE_CODE,
+        group: String? = null,
+    ) {
+        val base = override ?: state
+        val s = if (withSelection) base else base.copy(selected = null)
         Row(Modifier.fillMaxSize().background(Shield.Bg)) {
             Sidebar(
                 active = section, onSelect = {}, projectDir = s.projectDir,
@@ -131,9 +175,19 @@ class SnapshotGallery {
                                 s.selected, {}, {}, findings.size)
                             VDivider()
                             FindingsSection(
-                                breadcrumb = "All findings", onClearFilter = {}, groups = groups, selectedGroup = null,
+                                breadcrumb = group ?: "All findings", onClearFilter = {}, groups = groups, selectedGroup = group,
+                                onFixCriticalAndHigh = {},
                                 onSelectGroup = {}, visible = findings, selected = s.selected, fileLines = s.fileLines,
                                 onSelect = {}, onCloseDiff = {}, allFindings = findings, onOpenInIde = {},
+                                claudeFix = agentFix, onFixWithClaude = {},
+                                agent = codeshield.ui.components.AgentControls(
+                                    kind = agentKind,
+                                    paths = mapOf(
+                                        codeshield.agent.CodingAgentKind.CLAUDE_CODE to "/usr/local/bin/claude",
+                                        codeshield.agent.CodingAgentKind.OPENCODE to "/usr/local/bin/opencode",
+                                        codeshield.agent.CodingAgentKind.CODEX to null,
+                                    ),
+                                ),
                             )
                         }
                     }
@@ -142,8 +196,8 @@ class SnapshotGallery {
         }
     }
 
-    private fun shot(name: String, content: @Composable () -> Unit) {
-        ImageComposeScene(1440, 900, Density(1f)) {
+    private fun shot(name: String, width: Int = 1440, height: Int = 900, content: @Composable () -> Unit) {
+        ImageComposeScene(width, height, Density(1f)) {
             CompositionLocalProvider(LocalStrings provides stringsFor(AppLanguage.FR)) {
                 ShieldTheme { content() }
             }

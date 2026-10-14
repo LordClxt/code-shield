@@ -11,9 +11,9 @@ val JvmCommandRunner: CommandRunner = { command, workDir ->
     ProcessRunner.runStreaming(command, workDir).map { it.toTerminalLine(command) }
 }
 
-/** Idem avec une entrée standard (consigne de Claude Code, jamais en argument). */
-val JvmInputCommandRunner: InputCommandRunner = { command, workDir, stdin ->
-    ProcessRunner.runStreaming(command, workDir, stdin = stdin).map { it.toTerminalLine(command) }
+/** Session interactive (Claude Code) : consigne et réponses aux permissions sur l'entrée standard. */
+val JvmInteractiveCommandRunner: InteractiveCommandRunner = { command, workDir, input ->
+    ProcessRunner.runStreaming(command, workDir, input = input).map { it.toTerminalLine(command) }
 }
 
 private fun codeshield.scanner.ProcessEvent.toTerminalLine(command: List<String>): TerminalLine = when (this) {
@@ -68,8 +68,11 @@ val JvmScanWorkDirs = ScanWorkDirs(
 
 /** Fabrique Ktor pour le Cloud Sync Trigger. */
 val JvmSyncFactory: SyncClientFactory = { baseUrl, token ->
-    KtorSyncClient(baseUrl, tokenProvider = { token })
+    KtorSyncClient(baseUrl, tokenProvider = { token }, http = sharedSyncHttp)
 }
+
+/** Un seul client HTTP pour toutes les synchros (un client par envoi n'était jamais fermé). */
+private val sharedSyncHttp by lazy { KtorSyncClient.defaultClient() }
 
 /** Cache local des rapports (v1 : mémoire ; v2 : SQLDelight). */
 val LocalCache = InMemoryReportCache()
@@ -82,11 +85,15 @@ internal fun userBinDirs(
     home: String = System.getProperty("user.home"),
     appData: String? = System.getenv("APPDATA"),
 ): List<String> = listOfNotNull(
-    "$home/.local/bin", "$home/.claude/local", "$home/bin", "/opt/homebrew/bin", "/usr/local/bin",
+    "$home/.local/bin", "$home/.claude/local", "$home/.opencode/bin", "$home/.bun/bin", "$home/.npm-global/bin",
+    "$home/bin", "/opt/homebrew/bin", "/usr/local/bin",
     appData?.let { "$it/npm" },
 )
 
 private val isWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
+
+/** Commande shell d'une ligne (commande bloquée relancée par l'utilisateur). */
+val JvmShell: (String) -> List<String> = { cmd -> if (isWindows) listOf("cmd", "/c", cmd) else listOf("sh", "-c", cmd) }
 
 /** Noms de fichier possibles d'un binaire : `claude.exe` / `claude.cmd` sous Windows. */
 internal fun binaryFileNames(binary: String, windows: Boolean = isWindows): List<String> =
@@ -111,7 +118,8 @@ private fun whichBinary(binary: String): String? =
             listOf("sh", "-c", "command -v $binary")
         }
         val process = ProcessBuilder(probe).redirectErrorStream(true).start()
-        val out = process.inputStream.bufferedReader().readText().trim()
+        process.outputStream.close()
+        val out = process.inputStream.bufferedReader().use { it.readText() }.trim()
         val code = process.waitFor()
         if (code == 0 && out.isNotBlank()) out.lineSequence().first().trim() else null
     }.getOrNull()

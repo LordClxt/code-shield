@@ -34,9 +34,9 @@ const (
 	ToolGitleaks        Tool = "GITLEAKS"
 	ToolDependencyCheck Tool = "DEPENDENCY_CHECK"
 	ToolTrivy           Tool = "TRIVY"
-	ToolBandit          Tool = "BANDIT"
+	ToolBandit          Tool = "BANDIT" // historique : moteur retiré du desktop, plus produit
 	ToolOSVScanner      Tool = "OSV_SCANNER"
-	ToolCheckov         Tool = "CHECKOV"
+	ToolCheckov         Tool = "CHECKOV" // historique : moteur retiré du desktop, plus produit
 )
 
 var Tools = []Tool{ToolSemgrep, ToolGitleaks, ToolDependencyCheck, ToolTrivy, ToolBandit, ToolOSVScanner, ToolCheckov}

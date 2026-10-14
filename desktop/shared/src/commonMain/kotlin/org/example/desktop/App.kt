@@ -106,7 +106,13 @@ fun App(
     profiler: codeshield.ui.ProjectProfiler = { codeshield.scanner.ProjectProfile.UNKNOWN },
     workDirs: codeshield.ui.ScanWorkDirs = codeshield.ui.ScanWorkDirs(),
     reportReader: FileReader = fileReader,
-    inputRunner: codeshield.ui.InputCommandRunner = { command, workDir, _ -> runner(command, workDir) },
+    interactiveRunner: codeshield.ui.InteractiveCommandRunner = { command, workDir, _ -> runner(command, workDir) },
+    shell: (String) -> List<String> = { listOf("sh", "-c", it) },
+    /**
+     * Habillage natif (barre de menus, Dock…) fourni par desktopApp. Quand il est présent,
+     * les raccourcis ⌘ sont portés par les menus et le gestionnaire clavier interne les ignore.
+     */
+    nativeChrome: (@Composable (AppCommands) -> Unit)? = null,
     titleBarInset: Dp = 0.dp,
 ) {
     val scope = rememberCoroutineScope()
@@ -117,7 +123,8 @@ fun App(
             backendRunner = backendRunner, pentestEngine = pentestEngine,
             projectAnalyzer = projectAnalyzer,
             profiler = profiler, workDirs = workDirs, reportReader = reportReader,
-            inputRunner = inputRunner,
+            interactiveRunner = interactiveRunner,
+            shell = shell,
         )
     }
     val state by viewModel.state.collectAsState()
@@ -126,6 +133,7 @@ fun App(
     LaunchedEffect(Unit) {
         viewModel.observeBackend()
         viewModel.refreshTools()
+        viewModel.refreshAgents()
         viewModel.refreshHistory()
         viewModel.refreshSettings()
         viewModel.checkBackendHealth()
@@ -137,6 +145,8 @@ fun App(
     var selectedGroup by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(setOf<String>()) }
     var panelCollapsed by remember { mutableStateOf(false) }
+    var groupsDrag by remember { mutableStateOf<androidx.compose.ui.unit.Dp?>(null) }
+    val groupsWidth = groupsDrag ?: state.llmSettings.groupsPaneWidth.takeIf { it > 0 }?.dp ?: 260.dp
     val rootFocus = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
 
@@ -195,6 +205,38 @@ fun App(
     androidx.compose.runtime.CompositionLocalProvider(
         codeshield.ui.i18n.LocalStrings provides strings,
     ) {
+        if (nativeChrome != null) {
+            val focusSearch = {
+                section = AppSection.FINDINGS
+                runCatching { searchFocus.requestFocus() }
+                Unit
+            }
+            nativeChrome(
+                AppCommands(
+                    state = state,
+                    section = section,
+                    goTo = { section = it },
+                    openProject = { browse(false) },
+                    newTab = { browse(true) },
+                    closeTab = { viewModel.closeTab(state.activeTabId) },
+                    openRecent = { viewModel.openProject(it) },
+                    recentProjects = consultedProjects.map { it.path },
+                    canScan = dirValid && !state.isScanning,
+                    runScan = { if (dirValid && !state.isScanning) runScan() },
+                    cancelScan = { viewModel.cancelScan() },
+                    sync = { viewModel.sync(); section = AppSection.HEALTH },
+                    urgentCount = remember(state.findings) { codeshield.agent.ClaudeCodeFix.batchTargets(state.findings).size },
+                    fixUrgent = { section = AppSection.FINDINGS; viewModel.fixCriticalAndHighWithClaudeCode() },
+                    cancelFix = { viewModel.cancelClaudeFix() },
+                    setAgent = { k -> viewModel.updateSettings { it.copy(codingAgent = k) } },
+                    setAutoApprove = { on -> viewModel.updateSettings { it.copy(claudeAutoApprove = on) } },
+                    respondPermission = { id, allow, all -> viewModel.respondClaudePermission(id, allow, all) },
+                    focusSearch = focusSearch,
+                    setTheme = { t -> viewModel.updateSettings { it.copy(theme = t) } },
+                    setLanguage = { l -> viewModel.updateSettings { it.copy(language = l) } },
+                ),
+            )
+        }
         ShieldTheme(theme = state.llmSettings.theme) {
             Row(
                 modifier = Modifier.fillMaxSize().background(Shield.Bg)
@@ -203,6 +245,8 @@ fun App(
                     // Raccourcis : ⌘1…6 sections, ⌘K recherche, ⌘R scan, ⌘T new tab, ⌘W close tab
                     .onPreviewKeyEvent { e ->
                         if (e.type != KeyEventType.KeyDown || !(e.isMetaPressed || e.isCtrlPressed)) return@onPreviewKeyEvent false
+                        // Avec les menus natifs, ce sont eux qui portent ces raccourcis (sinon double action).
+                        if (nativeChrome != null && e.key != Key.Tab) return@onPreviewKeyEvent false
                         val sections = AppSection.entries
                         val idx = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six).indexOf(e.key)
                         when {
@@ -276,6 +320,13 @@ fun App(
                                 onSelectFinding = { viewModel.select(it) },
                                 onCollapse = { panelCollapsed = true },
                                 totalCount = searched.size,
+                                width = groupsWidth,
+                            )
+                            // Séparateur à glisser ; double-clic : largeur par défaut.
+                            codeshield.ui.design.ResizeHandle(
+                                onDrag = { dx -> groupsDrag = (groupsWidth + dx).coerceIn(200.dp, 480.dp) },
+                                onDragEnd = { groupsDrag?.let { w -> viewModel.updateSettings { it.copy(groupsPaneWidth = w.value.toInt()) } } },
+                                onReset = { groupsDrag = null; viewModel.updateSettings { it.copy(groupsPaneWidth = 0) } },
                             )
                         } else {
                             // Liseré de réouverture du panneau des groupes.
@@ -285,8 +336,8 @@ fun App(
                             ) {
                                 ShieldIconButton(Icons.Outlined.KeyboardDoubleArrowRight, "Expand panel", { panelCollapsed = false })
                             }
+                            VDivider()
                         }
-                        VDivider()
                     }
 
                     // Changement d'écran : l'ancien s'efface vite, le nouveau monde en fondu.
@@ -350,6 +401,18 @@ fun App(
                                 onCancelClaudeFix = { viewModel.cancelClaudeFix() },
                                 onFixCriticalAndHigh = { viewModel.fixCriticalAndHighWithClaudeCode() },
                                 onDismissClaudeFix = { viewModel.dismissClaudeFix() },
+                                agent = codeshield.ui.components.AgentControls(
+                                    kind = state.llmSettings.codingAgent,
+                                    paths = state.agentPaths,
+                                    onSelect = { k -> viewModel.updateSettings { it.copy(codingAgent = k) } },
+                                    autoApprove = state.llmSettings.claudeAutoApprove,
+                                    onAutoApprove = { on -> viewModel.updateSettings { it.copy(claudeAutoApprove = on) } },
+                                    onRespondPermission = { id, allow, all -> viewModel.respondClaudePermission(id, allow, all) },
+                                    onRunBlocked = { viewModel.runBlockedCommand(it) },
+                                    onDismissBlocked = { viewModel.dismissBlockedCommand(it) },
+                                ),
+                                detailWidthDp = state.llmSettings.detailPaneWidth,
+                                onDetailWidthChange = { w -> viewModel.updateSettings { it.copy(detailPaneWidth = w) } },
                             )
                             AppSection.PIPELINE -> PipelineSection(
                                 state = state,

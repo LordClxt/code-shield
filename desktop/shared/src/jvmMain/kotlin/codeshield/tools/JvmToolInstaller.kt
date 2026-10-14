@@ -1,7 +1,6 @@
 package codeshield.tools
 
 import codeshield.model.ToolName
-import codeshield.scanner.ScannerEngines
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -61,7 +60,7 @@ fun extractTarGz(tgzBytes: ByteArray, dest: File) {
  * binaires autonomes vérifiés par SHA-256 (aucun prérequis sur la machine) :
  * - Gitleaks, Trivy, OSV-Scanner : fichier de sommes publié avec la release.
  * - Opengrep : empreintes épinglées dans [ManagedTools.OPENGREP_SHA256].
- * - Bandit, Checkov, Dependency-Check : non installés (utilisés depuis le PATH).
+ * - Dependency-Check : non installé (utilisé depuis le PATH).
  */
 class JvmToolInstaller(
     private val toolsDir: File = File(System.getProperty("user.home"), ".codeshield/bin"),
@@ -110,8 +109,7 @@ class JvmToolInstaller(
                 ToolName.GITLEAKS -> installGitleaks(onProgress)
                 ToolName.SEMGREP -> installOpengrep(onProgress)
                 ToolName.BANDIT, ToolName.CHECKOV -> throw UnsupportedOperationException(
-                    "${ScannerEngines.of(tool).label} n'est pas installé par l'app (paquet Python) : " +
-                        ScannerEngines.of(tool).installHint,
+                    "${tool.name} n'est plus un moteur de CodeShield",
                 )
                 ToolName.TRIVY -> installTrivy(onProgress)
                 ToolName.OSV_SCANNER -> installOsv(onProgress)
@@ -128,9 +126,8 @@ class JvmToolInstaller(
         val os = osKind()
         val asset = ManagedTools.gitleaksAsset(os, arch())
             ?: throw UnsupportedOperationException("Gitleaks ne publie pas de binaire pour $os/${arch()}")
-        onProgress(0.05f)
-        val bytes = download(ManagedTools.gitleaksUrl(asset)) { onProgress(0.05f + 0.7f * it) }
-        onProgress(0.8f)
+        val bytes = download(ManagedTools.gitleaksUrl(asset), onProgress)
+        onProgress(InstallProgress.VERIFYING)
         verifyChecksum(asset, bytes)
         val stage = Files.createTempDirectory("codeshield-gitleaks").toFile()
         try {
@@ -146,7 +143,6 @@ class JvmToolInstaller(
         } finally {
             stage.deleteRecursively()
         }
-        onProgress(1f)
         return gitleaksFile().absolutePath
     }
 
@@ -155,9 +151,8 @@ class JvmToolInstaller(
     private fun installTrivy(onProgress: (Float) -> Unit): String {
         val os = osKind()
         val asset = ManagedTools.trivyAsset(os, arch())
-        onProgress(0.05f)
-        val bytes = download(ManagedTools.trivyUrl(asset)) { onProgress(0.05f + 0.7f * it) }
-        onProgress(0.8f)
+        val bytes = download(ManagedTools.trivyUrl(asset), onProgress)
+        onProgress(InstallProgress.VERIFYING)
         verifyChecksum(asset, bytes, ManagedTools.trivyChecksumsUrl())
         val stage = Files.createTempDirectory("codeshield-trivy").toFile()
         try {
@@ -168,14 +163,13 @@ class JvmToolInstaller(
         } finally {
             stage.deleteRecursively()
         }
-        onProgress(1f)
         return trivyFile().absolutePath
     }
 
     private fun installOsv(onProgress: (Float) -> Unit): String {
         val asset = ManagedTools.osvAsset(osKind(), arch())
-        onProgress(0.05f)
-        val bytes = download(ManagedTools.osvUrl(asset)) { onProgress(0.05f + 0.8f * it) }
+        val bytes = download(ManagedTools.osvUrl(asset), onProgress)
+        onProgress(InstallProgress.VERIFYING)
         verifyChecksum(asset, bytes, ManagedTools.osvChecksumsUrl())
         val stage = Files.createTempFile("codeshield-osv", "").toFile()
         try {
@@ -184,7 +178,6 @@ class JvmToolInstaller(
         } finally {
             stage.delete()
         }
-        onProgress(1f)
         return osvFile().absolutePath
     }
 
@@ -192,8 +185,8 @@ class JvmToolInstaller(
         val asset = ManagedTools.opengrepAsset(osKind(), arch())
         val expected = ManagedTools.OPENGREP_SHA256[asset]
             ?: throw IllegalStateException("empreinte inconnue pour $asset — abandon (sécurité)")
-        onProgress(0.05f)
-        val bytes = download(ManagedTools.opengrepUrl(asset)) { onProgress(0.05f + 0.85f * it) }
+        val bytes = download(ManagedTools.opengrepUrl(asset), onProgress)
+        onProgress(InstallProgress.VERIFYING)
         require(sha256Hex(bytes).equals(expected, ignoreCase = true)) {
             "checksum invalide pour $asset (corrompu ou compromis) — abandon"
         }
@@ -204,7 +197,6 @@ class JvmToolInstaller(
         } finally {
             stage.delete()
         }
-        onProgress(1f)
         return opengrepFile().absolutePath
     }
 
@@ -242,7 +234,10 @@ class JvmToolInstaller(
             val code = connection.responseCode
             require(code in 200..299) { "téléchargement $url : HTTP $code" }
             val total = connection.contentLengthLong.takeIf { it > 0 }
+            // Taille inconnue : jauge indéterminée plutôt que bloquée à 0.
+            onProgress(if (total != null) 0f else InstallProgress.UNKNOWN_SIZE)
             val out = java.io.ByteArrayOutputStream()
+            var lastPercent = 0
             connection.inputStream.use { input ->
                 val buffer = ByteArray(64 * 1024)
                 var read = 0L
@@ -251,7 +246,14 @@ class JvmToolInstaller(
                     if (n < 0) break
                     out.write(buffer, 0, n)
                     read += n
-                    if (total != null) onProgress((read.toFloat() / total.toFloat()).coerceIn(0f, 1f))
+                    if (total != null) {
+                        // Un événement par point de pourcentage, pas par bloc de 64 Ko.
+                        val percent = (read * 100 / total).toInt().coerceIn(0, 100)
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onProgress(percent / 100f)
+                        }
+                    }
                 }
             }
             return out.toByteArray()

@@ -3,7 +3,11 @@ package codeshield.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** Moteur d'analyse. Aligné avec le backend (domain.Tool) et contracts/openapi.yaml. */
+/**
+ * Moteur d'analyse. Aligné avec le backend (domain.Tool) et contracts/openapi.yaml.
+ * BANDIT et CHECKOV ne sont plus produits (moteurs retirés) : conservés pour relire
+ * l'historique local et les failles déjà synchronisées.
+ */
 @Serializable
 enum class ToolName(val defaultCategory: Category) {
     @SerialName("SEMGREP") SEMGREP(Category.SAST),

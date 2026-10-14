@@ -42,12 +42,8 @@ fun groupFindings(findings: List<Finding>, tab: GroupTab): List<FindingGroup> {
         .sortedWith(compareByDescending<FindingGroup> { it.count }.thenBy { it.title })
 }
 
-private fun toolLabel(toolName: String): String = when (toolName) {
-    ToolName.SEMGREP.name -> "Opengrep"
-    ToolName.GITLEAKS.name -> "Gitleaks"
-    ToolName.DEPENDENCY_CHECK.name -> "Dependency-Check"
-    else -> toolName
-}
+private fun toolLabel(toolName: String): String =
+    ToolName.entries.firstOrNull { it.name == toolName }?.let { codeshield.ui.theme.Shield.toolLabel(it) } ?: toolName
 
 private fun findingOrder(): Comparator<Finding> =
     compareBy<Finding> { it.severity.ordinal }.thenBy { it.filePath }.thenBy { it.lineNumber }

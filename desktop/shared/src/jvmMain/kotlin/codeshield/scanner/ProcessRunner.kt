@@ -1,6 +1,7 @@
 package codeshield.scanner
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
@@ -27,8 +28,11 @@ object ProcessRunner {
         command: List<String>,
         workDir: String? = null,
         extraEnv: Map<String, String> = emptyMap(),
-        /** Texte écrit sur l'entrée standard (puis fermée) : évite le quoting des arguments sous Windows. */
-        stdin: String? = null,
+        /**
+         * Lignes écrites sur l'entrée standard au fil de l'eau (session interactive : Claude Code).
+         * L'entrée est fermée quand le canal l'est. null = entrée fermée tout de suite.
+         */
+        input: ReceiveChannel<String>? = null,
     ): Flow<ProcessEvent> = channelFlow {
         require(command.isNotEmpty()) { "command must not be empty" }
         val builder = ProcessBuilder(command).apply {
@@ -38,11 +42,21 @@ object ProcessRunner {
         }
         val process = withContext(Dispatchers.IO) { builder.start() }
         try {
-            if (stdin == null) {
+            if (input == null) {
                 process.outputStream.close() // aucun moteur n'attend d'entrée
             } else {
                 // Un processus qui sort sans tout lire casse le tube : son code de sortie fait foi.
-                launch(Dispatchers.IO) { runCatching { process.outputStream.bufferedWriter().use { it.write(stdin) } } }
+                launch(Dispatchers.IO) {
+                    runCatching {
+                        process.outputStream.bufferedWriter().use { w ->
+                            for (line in input) {
+                                w.write(line)
+                                w.newLine()
+                                w.flush()
+                            }
+                        }
+                    }
+                }
             }
             val out = launch(Dispatchers.IO) {
                 process.inputStream.bufferedReader().useLines { lines -> lines.forEach { send(ProcessEvent.Stdout(it)) } }

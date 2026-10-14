@@ -15,8 +15,6 @@ enum class Arch { ARM64, X64 }
  *   (nomenclature goreleaser vérifiée : `gitleaks_<v>_<os>_<arch>.tar.gz|.zip`).
  * - Opengrep : moteur SAST (fork LGPL de Semgrep, mêmes règles, même JSON),
  *   binaire autonome par OS.
- * - Bandit, Checkov : non installés (paquets Python) ; utilisés s'ils sont déjà
- *   dans le PATH. Opengrep et Trivy couvrent déjà le code Python et l'IaC.
  * - Dependency-Check : exclu (JVM + base NVD de plusieurs Go, installation manuelle).
  */
 object ManagedTools {

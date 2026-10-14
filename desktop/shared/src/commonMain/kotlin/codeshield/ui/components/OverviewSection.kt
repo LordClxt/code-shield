@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import codeshield.logic.ScoreCalculator
 import codeshield.model.Severity
 import codeshield.model.ToolName
+import codeshield.tools.InstallProgress
 import codeshield.tools.ToolState
 import codeshield.tools.ToolStatus
 import codeshield.scanner.ScannerEngine
@@ -75,6 +75,7 @@ import codeshield.ui.design.animateOnAppear
 import codeshield.ui.design.PageHeader
 import codeshield.ui.design.Panel
 import codeshield.ui.design.ShieldButton
+import codeshield.ui.design.ShieldProgressBar
 import codeshield.ui.design.ShieldSwitch
 import codeshield.ui.design.ShieldTextField
 import codeshield.ui.design.StatusDot
@@ -235,7 +236,7 @@ fun OverviewSection(
                             ) {
                                 ShieldSwitch(checked = state.autoDetectEngines, onCheckedChange = onToggleAutoDetect)
                                 Text(
-                                    "Auto-détection : ignorer les moteurs sans cible (ex. Bandit sans Python)",
+                                    "Auto-détection : ignorer les moteurs sans cible (ex. OSV-Scanner sans lockfile)",
                                     color = Shield.TextMute, fontSize = TypeScale.caption,
                                 )
                             }
@@ -530,22 +531,20 @@ private fun EngineSwitchRow(
             }
         }
         if (run?.state == EngineState.RUNNING) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(Radius.full),
-                color = Shield.toolBadge(tool).second,
-                trackColor = Shield.Pill,
-            )
+            ShieldProgressBar(null, Modifier.padding(top = 4.dp), color = Shield.toolBadge(tool).second)
         }
         if (status?.state == ToolState.INSTALLING) {
-            val progress = status.progress
-            if (progress != null && progress >= 0f) {
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(Radius.full),
-                    color = Shield.Accent,
-                    trackColor = Shield.Pill,
-                )
-            }
+            val p = status.progress
+            val downloading = p?.takeIf { it >= 0f }
+            ShieldProgressBar(downloading, Modifier.padding(top = 4.dp))
+            Text(
+                when {
+                    downloading != null -> "Téléchargement… ${(downloading * 100).roundToInt()} %"
+                    p == InstallProgress.UNKNOWN_SIZE -> "Téléchargement…"
+                    else -> "Vérification et installation…"
+                },
+                color = Shield.TextMute, fontSize = TypeScale.caption,
+            )
         }
         val error = status?.error ?: run?.message?.takeIf { run.state == EngineState.FAILED || run.state == EngineState.MISSING }
         if (error != null) {

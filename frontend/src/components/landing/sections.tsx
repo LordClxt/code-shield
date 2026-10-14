@@ -78,12 +78,10 @@ function CardText({ title, children }: { title: string; children: ReactNode }) {
 /* ------------------------------------------------------------------------- */
 
 export const ENGINES = [
-  { letter: 'S', name: 'Semgrep', color: '#4C9AE8' },
+  { letter: 'O', name: 'Opengrep', color: '#4C9AE8' },
   { letter: 'G', name: 'Gitleaks', color: '#EC7F3C' },
   { letter: 'T', name: 'Trivy', color: '#2CB5A8' },
-  { letter: 'B', name: 'Bandit', color: '#D9B43A' },
-  { letter: 'C', name: 'Checkov', color: '#D86FA4' },
-  { letter: 'O', name: 'OSV-Scanner', color: '#3FB97F' },
+  { letter: 'V', name: 'OSV-Scanner', color: '#3FB97F' },
   { letter: 'D', name: 'Dependency-Check', color: '#9B8AFB' },
 ] as const
 
@@ -283,7 +281,7 @@ export function ProcessCards() {
           <div className="absolute inset-x-7 top-7 grid gap-2.5 rounded-xl bg-night/70 p-4 ring-1 ring-[rgb(167_139_250/0.2)]" aria-hidden>
             {(
               [
-                ['S', '#4C9AE8', 'Semgrep', 1],
+                ['O', '#4C9AE8', 'Opengrep', 1],
                 ['G', '#EC7F3C', 'Gitleaks', 1],
                 ['T', '#2CB5A8', 'Trivy', 0.6],
               ] as const
@@ -435,10 +433,10 @@ export function PayloadTrio() {
 /* ------------------------------------------------------------------------- */
 
 const CATEGORIES = [
-  { label: 'Code', color: '#6E79D6', engines: ['S', 'B'], when: 'Semgrep toujours, Bandit si le projet contient du Python.' },
+  { label: 'Code', color: '#6E79D6', engines: ['O'], when: 'Toujours, sur tous les langages du projet.' },
   { label: 'Secrets', color: '#EC7F3C', engines: ['G', 'T'], when: 'Toujours. Les valeurs trouvées sont masquées.' },
-  { label: 'Dépendances', color: '#9B8AFB', engines: ['T', 'O', 'D'], when: 'Dès qu’un lockfile ou un manifeste est présent.' },
-  { label: 'Infrastructure', color: '#2CB5A8', engines: ['T', 'C'], when: 'Terraform, Kubernetes, Dockerfile ou CI.' },
+  { label: 'Dépendances', color: '#9B8AFB', engines: ['T', 'V', 'D'], when: 'Dès qu’un lockfile ou un manifeste est présent.' },
+  { label: 'Infrastructure', color: '#2CB5A8', engines: ['T'], when: 'Terraform, Kubernetes, Dockerfile ou CI.' },
 ]
 
 export function CategoryCards() {
@@ -479,7 +477,7 @@ const FAQ: [string, string][] = [
   ],
   [
     'Dois-je installer les scanners moi-même ?',
-    'Non. L’app installe Trivy et OSV-Scanner depuis leurs versions publiées, Bandit et Checkov via pip, dans son propre dossier. Elle utilise aussi ceux déjà présents sur votre machine.',
+    'Non, et pas besoin de Python. L’app télécharge Opengrep, Gitleaks, Trivy et OSV-Scanner depuis leurs versions publiées, vérifie leur empreinte et les range dans son propre dossier.',
   ],
   [
     'Comment Claude Code corrige-t-il une faille ?',

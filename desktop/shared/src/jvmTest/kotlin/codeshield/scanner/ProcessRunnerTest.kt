@@ -41,7 +41,10 @@ class ProcessRunnerTest {
     fun stdinIsWrittenThenClosed() = runTest {
         if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) return@runTest
         val prompt = "ligne 1 & \"guillemets\" | `x`\nligne 2"
-        val events = ProcessRunner.runStreaming(listOf("cat"), null, stdin = prompt).toList()
+        val input = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+        prompt.lines().forEach { input.trySend(it) }
+        input.close()
+        val events = ProcessRunner.runStreaming(listOf("cat"), null, input = input).toList()
         assertEquals(prompt.lines(), events.filterIsInstance<ProcessEvent.Stdout>().map { it.line })
         assertEquals(0, events.filterIsInstance<ProcessEvent.Exit>().single().code)
     }

@@ -31,8 +31,8 @@ fun explainFinding(finding: Finding): IssueExplanation = when (finding.effective
         category = "Mauvaise configuration d'infrastructure (IaC)",
         what = "La règle ${finding.ruleId} (${finding.title}) signale une configuration risquée dans ${finding.filePath}.",
         why = "Une configuration permissive (bucket public, conteneur root, port ouvert, chiffrement absent) expose directement l'infrastructure.",
-        fix = "1. Lisez la règle pour connaître la valeur attendue.\n2. Corrigez la ressource au plus près de la ligne indiquée (moindre privilège, chiffrement, accès restreint).\n3. Risque accepté : commentaire de suppression checkov/trivy avec justification.",
-        references = listOf("https://www.checkov.io/5.Policy%20Index/all.html", "https://avd.aquasec.com/"),
+        fix = "1. Lisez la règle pour connaître la valeur attendue.\n2. Corrigez la ressource au plus près de la ligne indiquée (moindre privilège, chiffrement, accès restreint).\n3. Risque accepté : commentaire de suppression trivy (`trivy:ignore`) avec justification.",
+        references = listOf("https://avd.aquasec.com/"),
     )
     Category.SAST -> explainSemgrep(finding)
 }

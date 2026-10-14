@@ -80,9 +80,11 @@ fun SidePanel(
     onSelectFinding: (Finding) -> Unit,
     onCollapse: () -> Unit,
     totalCount: Int,
+    /** Largeur (réglée à la souris par le séparateur de App). */
+    width: androidx.compose.ui.unit.Dp = 260.dp,
 ) {
     Column(
-        modifier = Modifier.width(260.dp).fillMaxHeight().background(Shield.Surface),
+        modifier = Modifier.width(width).fillMaxHeight().background(Shield.Surface),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().height(52.dp).padding(start = Space.lg, end = Space.sm),

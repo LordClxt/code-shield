@@ -288,7 +288,10 @@ export interface components {
     schemas: {
         /** @enum {string} */
         Severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-        /** @enum {string} */
+        /**
+         * @description Moteur à l'origine de la faille. SEMGREP désigne le moteur SAST au format Semgrep (exécuté par Opengrep côté desktop, mêmes règles et identifiants). BANDIT et CHECKOV sont historiques : ces moteurs sont retirés et ne produisent plus de failles ; les valeurs restent valides pour les données existantes.
+         * @enum {string}
+         */
         ToolName: "SEMGREP" | "GITLEAKS" | "DEPENDENCY_CHECK" | "TRIVY" | "BANDIT" | "OSV_SCANNER" | "CHECKOV";
         /** @enum {string} */
         Category: "SAST" | "SECRET" | "SCA" | "IAC";

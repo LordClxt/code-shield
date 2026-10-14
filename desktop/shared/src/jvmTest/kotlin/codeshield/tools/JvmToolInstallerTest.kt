@@ -54,15 +54,14 @@ class JvmToolInstallerTest {
     }
 
     @Test
-    fun pythonToolsAreNeverInstalled() = kotlinx.coroutines.test.runTest {
-        // Bandit et Checkov sont des paquets Python : jamais d'appel à pip.
+    fun retiredToolsAreNeverInstalled() = kotlinx.coroutines.test.runTest {
+        // Bandit et Checkov retirés : aucun téléchargement, aucun appel à pip.
         val (installer, dir) = installerInTemp()
         try {
             for (tool in listOf(ToolName.BANDIT, ToolName.CHECKOV)) {
                 assertNull(installer.installedPath(tool))
                 val result = installer.install(tool) {}
                 assertTrue(result.exceptionOrNull() is UnsupportedOperationException, "$tool: $result")
-                assertTrue(!ToolStatus(tool, ToolState.MISSING).autoInstallable)
             }
             assertTrue(dir.listFiles().isNullOrEmpty(), "rien ne doit être écrit")
         } finally {

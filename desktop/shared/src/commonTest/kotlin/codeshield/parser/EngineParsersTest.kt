@@ -118,25 +118,6 @@ class EngineParsersTest {
     }
 
     @Test
-    fun banditMapsTestIdsCweAndColumns() {
-        val raw = """
-        {"results": [{"filename": "./svc/run.py", "line_number": 10, "line_range": [10, 12],
-          "col_offset": 4, "end_col_offset": 40, "issue_severity": "HIGH", "issue_confidence": "HIGH",
-          "issue_text": "subprocess call with shell=True", "test_id": "B602",
-          "test_name": "subprocess_popen_with_shell_equals_true", "issue_cwe": {"id": 78},
-          "code": "subprocess.Popen(cmd, shell=True)"}]}
-        """.trimIndent()
-        val f = parseBanditResults(raw).single()
-        assertEquals(ToolName.BANDIT, f.tool)
-        assertEquals("svc/run.py", f.filePath)
-        assertEquals(12, f.endLine)
-        assertEquals(5, f.column)
-        assertEquals(listOf("CWE-78"), f.cwe)
-        assertEquals("B602", f.remediationKey)
-        assertFalse(f.toString().contains("Popen(cmd"), "le champ `code` ne doit jamais être lu")
-    }
-
-    @Test
     fun osvGroupsAliasesAndPrefersCve() {
         val raw = """
         {"results": [{"source": {"path": "/repo/package-lock.json", "type": "lockfile"},
@@ -152,21 +133,6 @@ class EngineParsersTest {
         assertEquals(Severity.HIGH, f.severity)
         assertEquals("4.17.21", f.fixedVersion)
         assertEquals("lodash", f.packageName)
-    }
-
-    @Test
-    fun checkovHandlesSingleAndMultiFrameworkReports() {
-        val one = """{"check_type": "terraform", "results": {"failed_checks": [
-            {"check_id": "CKV_AWS_20", "check_name": "S3 Bucket has an ACL defined which allows public READ access.",
-             "file_path": "/infra/s3.tf", "file_line_range": [1, 9], "resource": "aws_s3_bucket.data",
-             "guideline": "https://docs.prismacloud.io/..."}]}}"""
-        val f = parseCheckovResults(one).single()
-        assertEquals("infra/s3.tf", f.filePath)
-        assertEquals(9, f.endLine)
-        assertEquals(Severity.MEDIUM, f.severity)
-        assertEquals(Category.IAC, f.category)
-        val many = "[$one, {\"check_type\": \"dockerfile\", \"results\": {\"failed_checks\": []}}]"
-        assertEquals(1, parseCheckovResults(many).size)
     }
 
     @Test
@@ -187,7 +153,7 @@ class EngineParsersTest {
 
     @Test
     fun malformedReportsNeverThrow() {
-        for (parse in listOf(::parseTrivyResults, ::parseBanditResults, ::parseOsvResults, ::parseCheckovResults, ::parseDependencyCheckResults)) {
+        for (parse in listOf(::parseTrivyResults, ::parseOsvResults, ::parseDependencyCheckResults)) {
             assertTrue(parse("not json", "").isEmpty())
             assertTrue(parse("{}", "").isEmpty())
             assertTrue(parse("[]", "").isEmpty())

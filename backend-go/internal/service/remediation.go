@@ -110,9 +110,9 @@ func iacGuidance(v *domain.Vulnerability) Guidance {
 		Fix: []string{
 			"Lire la règle (lien ci-dessous) pour connaître la valeur attendue.",
 			"Corriger la ressource au plus près de la ligne indiquée (moindre privilège, chiffrement activé, accès restreint).",
-			"Si le risque est accepté, documenter l'exception (commentaire de suppression checkov/trivy avec justification).",
+			"Si le risque est accepté, documenter l'exception (commentaire de suppression trivy `trivy:ignore` avec justification).",
 		},
-		References: []string{"https://www.checkov.io/5.Policy%20Index/all.html", "https://avd.aquasec.com/"},
+		References: []string{"https://avd.aquasec.com/"},
 	}
 }
 
