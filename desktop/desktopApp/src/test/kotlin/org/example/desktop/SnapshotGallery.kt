@@ -45,9 +45,12 @@ import kotlin.test.Test
  * ne s'exécute que si SNAPSHOTS_DIR est défini.
  *
  *   SNAPSHOTS_DIR=/tmp/shots ./gradlew :desktopApp:test --tests '*SnapshotGallery*'
+ *
+ * SNAPSHOTS_SCALE=2 rend en haute densité (captures du README, nettes sur écran Retina).
  */
 class SnapshotGallery {
     private val out = System.getenv("SNAPSHOTS_DIR").orEmpty()
+    private val scale = System.getenv("SNAPSHOTS_SCALE")?.toFloatOrNull() ?: 1f
 
     private val findings = listOf(
         Finding(ToolName.SEMGREP, "python.flask.security.injection.tainted-sql-string", "app/routes/users.py", 10,
@@ -159,8 +162,8 @@ class SnapshotGallery {
             Sidebar(
                 active = section, onSelect = {}, projectDir = s.projectDir,
                 consultedProjects = listOf(ConsultedProject(s.projectDir, findingsCount = findings.size)),
-                findingsCount = findings.size, isScanning = false, backendOnline = true,
-                enginesReady = 6, enginesTotal = 7, onToggleLanguage = {},
+                findingsCount = findings.size, isScanning = false, backendOnline = s.backendState.running,
+                enginesReady = 4, enginesTotal = 5, onToggleLanguage = {},
             )
             VDivider()
             Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -197,7 +200,7 @@ class SnapshotGallery {
     }
 
     private fun shot(name: String, width: Int = 1440, height: Int = 900, content: @Composable () -> Unit) {
-        ImageComposeScene(width, height, Density(1f)) {
+        ImageComposeScene((width * scale).toInt(), (height * scale).toInt(), Density(scale)) {
             CompositionLocalProvider(LocalStrings provides stringsFor(AppLanguage.FR)) {
                 ShieldTheme { content() }
             }
