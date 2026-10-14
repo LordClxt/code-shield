@@ -14,7 +14,7 @@ class JvmToolInstallerTest {
 
     private fun installerInTemp(): Pair<JvmToolInstaller, java.io.File> {
         val dir = Files.createTempDirectory("codeshield-tools").toFile()
-        return JvmToolInstaller(toolsDir = dir, locator = { null }) to dir
+        return JvmToolInstaller(toolsDir = dir) to dir
     }
 
     @Test
@@ -36,6 +36,35 @@ class JvmToolInstallerTest {
             val name = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "gitleaks.exe" else "gitleaks"
             val fake = dir.resolve(name).apply { writeText("#!/bin/sh\necho hi\n") }
             assertEquals(fake.absolutePath, installer.installedPath(ToolName.GITLEAKS))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun managedOpengrepIsDetectedForSastEngine() {
+        val (installer, dir) = installerInTemp()
+        try {
+            val name = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "opengrep.exe" else "opengrep"
+            val fake = dir.resolve(name).apply { writeText("#!/bin/sh\necho hi\n") }
+            assertEquals(fake.absolutePath, installer.installedPath(ToolName.SEMGREP))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun pythonToolsAreNeverInstalled() = kotlinx.coroutines.test.runTest {
+        // Bandit et Checkov sont des paquets Python : jamais d'appel à pip.
+        val (installer, dir) = installerInTemp()
+        try {
+            for (tool in listOf(ToolName.BANDIT, ToolName.CHECKOV)) {
+                assertNull(installer.installedPath(tool))
+                val result = installer.install(tool) {}
+                assertTrue(result.exceptionOrNull() is UnsupportedOperationException, "$tool: $result")
+                assertTrue(!ToolStatus(tool, ToolState.MISSING).autoInstallable)
+            }
+            assertTrue(dir.listFiles().isNullOrEmpty(), "rien ne doit être écrit")
         } finally {
             dir.deleteRecursively()
         }

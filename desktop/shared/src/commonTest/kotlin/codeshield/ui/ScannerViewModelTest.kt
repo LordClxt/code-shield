@@ -108,7 +108,7 @@ class ScannerViewModelTest {
             runner = { cmd, dir ->
                 commands += cmd to dir
                 flow {
-                    if (cmd.first().endsWith("semgrep")) emit(TerminalLine.Out(semgrepJson))
+                    if (cmd.first().endsWith("opengrep")) emit(TerminalLine.Out(semgrepJson))
                     emit(TerminalLine.Exit(cmd.first(), 1))
                 }
             },

@@ -47,8 +47,8 @@ interface ScannerEngine {
 }
 
 /**
- * Ruleset Semgrep par défaut. `--config auto` exige l'envoi de métriques à Semgrep,
- * incompatible avec `--metrics=off` (code 2) : on utilise le ruleset du registre.
+ * Ruleset par défaut (registre, format Semgrep, lu tel quel par Opengrep).
+ * `--config auto` dépend des métriques du registre : on utilise un ruleset explicite.
  */
 const val DEFAULT_SEMGREP_CONFIG = "p/default"
 
@@ -80,18 +80,24 @@ data class ProjectProfile(
     }
 }
 
-object SemgrepEngine : ScannerEngine {
+/**
+ * SAST multi-langages : Opengrep, fork LGPL de Semgrep publié en binaire autonome
+ * (aucun Python requis). Mêmes règles, même JSON, mêmes identifiants de règles :
+ * l'outil reste [ToolName.SEMGREP] dans le contrat, pour que les failles déjà
+ * synchronisées gardent leur identité. Pas de télémétrie (ni d'option `--metrics`).
+ */
+object OpengrepEngine : ScannerEngine {
     override val tool = ToolName.SEMGREP
-    override val label = "Semgrep"
-    override val binary = "semgrep"
+    override val label = "Opengrep"
+    override val binary = "opengrep"
     override val categories = setOf(Category.SAST)
-    override val description = "SAST multi-langages (injections, XSS, crypto…)"
-    override val installHint = "`brew install semgrep` (ou `pip install semgrep`)"
+    override val description = "SAST multi-langages (injections, XSS, crypto…), règles Semgrep"
+    override val installHint = "Téléchargé par l'app (binaire autonome), ou https://github.com/opengrep/opengrep/releases"
     override val defaultEnabled = true
     override val outputMode = OutputMode.STDOUT
     override fun command(binaryPath: String, workDir: String, options: EngineOptions) = listOf(
         binaryPath, "scan", "--config", options.semgrepConfig.takeUnless { it == "auto" } ?: DEFAULT_SEMGREP_CONFIG,
-        "--json", "--quiet", "--metrics=off", ".",
+        "--json", "--quiet", ".",
     )
     override fun parse(rawJson: String, projectDir: String) = parseSemgrepResults(rawJson, projectDir)
 }
@@ -153,9 +159,9 @@ object BanditEngine : ScannerEngine {
     override val label = "Bandit"
     override val binary = "bandit"
     override val categories = setOf(Category.SAST)
-    override val description = "SAST Python dédié (subprocess, pickle, crypto…)"
-    override val installHint = "`pipx install bandit` (ou `brew install bandit`)"
-    override val defaultEnabled = true
+    override val description = "SAST Python dédié (optionnel : Opengrep couvre déjà Python)"
+    override val installHint = "optionnel, non installé par l'app : `brew install bandit` ou `pipx install bandit`"
+    override val defaultEnabled = false
     override val outputMode = OutputMode.REPORT_FILE
     override fun isRelevant(profile: ProjectProfile) = profile.hasPython
     override fun command(binaryPath: String, workDir: String, options: EngineOptions) = listOf(
@@ -170,9 +176,9 @@ object CheckovEngine : ScannerEngine {
     override val label = "Checkov"
     override val binary = "checkov"
     override val categories = setOf(Category.IAC)
-    override val description = "IaC : Terraform, Kubernetes, Dockerfile, GitHub Actions"
-    override val installHint = "`pipx install checkov` (ou `brew install checkov`)"
-    override val defaultEnabled = true
+    override val description = "IaC : Terraform, Kubernetes, Dockerfile (optionnel : Trivy couvre déjà l'IaC)"
+    override val installHint = "optionnel, non installé par l'app : `brew install checkov` ou `pipx install checkov`"
+    override val defaultEnabled = false
     override val outputMode = OutputMode.STDOUT
     override fun isRelevant(profile: ProjectProfile) = profile.hasIac
     override fun command(binaryPath: String, workDir: String, options: EngineOptions) = listOf(
@@ -204,7 +210,7 @@ object DependencyCheckEngine : ScannerEngine {
 /** Registre des moteurs, dans l'ordre d'affichage. */
 object ScannerEngines {
     val all: List<ScannerEngine> = listOf(
-        SemgrepEngine, GitleaksEngine, TrivyEngine, BanditEngine, CheckovEngine, OsvScannerEngine, DependencyCheckEngine,
+        OpengrepEngine, GitleaksEngine, TrivyEngine, OsvScannerEngine, BanditEngine, CheckovEngine, DependencyCheckEngine,
     )
 
     fun of(tool: ToolName): ScannerEngine = all.first { it.tool == tool }

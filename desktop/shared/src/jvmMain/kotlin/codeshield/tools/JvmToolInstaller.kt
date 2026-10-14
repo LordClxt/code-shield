@@ -1,6 +1,7 @@
 package codeshield.tools
 
 import codeshield.model.ToolName
+import codeshield.scanner.ScannerEngines
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -56,25 +57,14 @@ fun extractTarGz(tgzBytes: ByteArray, dest: File) {
 }
 
 /**
- * Installation gérée des scanners dans `~/.codeshield/bin` :
- * - Gitleaks : asset GitHub officiel, vérifié par SHA-256 (checksums.txt de la release).
- * - Semgrep : `pip install --target` (pas de binaire standalone officiel).
- * - Dependency-Check : non supporté (manuel uniquement).
+ * Installation gérée des scanners dans `~/.codeshield/bin`, uniquement des
+ * binaires autonomes vérifiés par SHA-256 (aucun prérequis sur la machine) :
+ * - Gitleaks, Trivy, OSV-Scanner : fichier de sommes publié avec la release.
+ * - Opengrep : empreintes épinglées dans [ManagedTools.OPENGREP_SHA256].
+ * - Bandit, Checkov, Dependency-Check : non installés (utilisés depuis le PATH).
  */
 class JvmToolInstaller(
     private val toolsDir: File = File(System.getProperty("user.home"), ".codeshield/bin"),
-    private val locator: (String) -> String? = { binary ->
-        runCatching {
-            val probe = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-                listOf("where", binary)
-            } else {
-                listOf("sh", "-c", "command -v $binary")
-            }
-            val process = ProcessBuilder(probe).redirectErrorStream(true).start()
-            val out = process.inputStream.bufferedReader().readText().trim()
-            if (process.waitFor() == 0 && out.isNotBlank()) out.lineSequence().first().trim() else null
-        }.getOrNull()
-    },
 ) : ToolInstaller {
 
     internal fun osKind(): OsKind {
@@ -94,19 +84,7 @@ class JvmToolInstaller(
     private fun gitleaksFile(): File =
         File(toolsDir, ManagedTools.gitleaksBinaryName(osKind()))
 
-    private fun semgrepLibsDir(): File = File(toolsDir, "semgrep-pylibs")
-
-    private fun semgrepFile(): File =
-        File(ManagedTools.pipScriptDir(semgrepLibsDir().absolutePath, osKind()), ManagedTools.semgrepBinaryName(osKind()))
-
-    /** `<tool>-pylibs` : un `pip --target` isolé par outil Python (bandit, checkov). */
-    private fun pipLibsDir(tool: ToolName): File =
-        if (tool == ToolName.SEMGREP) semgrepLibsDir() else File(toolsDir, "${tool.name.lowercase()}-pylibs")
-
-    private fun pipScriptFile(tool: ToolName): File = if (tool == ToolName.SEMGREP) semgrepFile() else File(
-        ManagedTools.pipScriptDir(pipLibsDir(tool).absolutePath, osKind()),
-        ManagedTools.pipScriptName(ManagedTools.PIP_TOOLS.getValue(tool), osKind()),
-    )
+    private fun opengrepFile(): File = File(toolsDir, ManagedTools.opengrepBinaryName(osKind()))
 
     private fun trivyFile(): File = File(toolsDir, ManagedTools.trivyBinaryName(osKind()))
 
@@ -114,10 +92,10 @@ class JvmToolInstaller(
 
     override fun installedPath(tool: ToolName): String? = when (tool) {
         ToolName.GITLEAKS -> gitleaksFile()
-        ToolName.SEMGREP, ToolName.BANDIT, ToolName.CHECKOV -> pipScriptFile(tool)
+        ToolName.SEMGREP -> opengrepFile()
         ToolName.TRIVY -> trivyFile()
         ToolName.OSV_SCANNER -> osvFile()
-        ToolName.DEPENDENCY_CHECK -> null
+        ToolName.BANDIT, ToolName.CHECKOV, ToolName.DEPENDENCY_CHECK -> null
     }?.takeIf { it.isFile }?.absolutePath
 
     override suspend fun status(tool: ToolName): ToolStatus {
@@ -130,8 +108,11 @@ class JvmToolInstaller(
         runCatching {
             when (tool) {
                 ToolName.GITLEAKS -> installGitleaks(onProgress)
-                ToolName.SEMGREP -> installSemgrepViaPip(onProgress)
-                ToolName.BANDIT, ToolName.CHECKOV -> installViaPip(tool, onProgress)
+                ToolName.SEMGREP -> installOpengrep(onProgress)
+                ToolName.BANDIT, ToolName.CHECKOV -> throw UnsupportedOperationException(
+                    "${ScannerEngines.of(tool).label} n'est pas installé par l'app (paquet Python) : " +
+                        ScannerEngines.of(tool).installHint,
+                )
                 ToolName.TRIVY -> installTrivy(onProgress)
                 ToolName.OSV_SCANNER -> installOsv(onProgress)
                 ToolName.DEPENDENCY_CHECK -> throw UnsupportedOperationException(
@@ -207,34 +188,31 @@ class JvmToolInstaller(
         return osvFile().absolutePath
     }
 
+    private fun installOpengrep(onProgress: (Float) -> Unit): String {
+        val asset = ManagedTools.opengrepAsset(osKind(), arch())
+        val expected = ManagedTools.OPENGREP_SHA256[asset]
+            ?: throw IllegalStateException("empreinte inconnue pour $asset — abandon (sécurité)")
+        onProgress(0.05f)
+        val bytes = download(ManagedTools.opengrepUrl(asset)) { onProgress(0.05f + 0.85f * it) }
+        require(sha256Hex(bytes).equals(expected, ignoreCase = true)) {
+            "checksum invalide pour $asset (corrompu ou compromis) — abandon"
+        }
+        val stage = Files.createTempFile("codeshield-opengrep", "").toFile()
+        try {
+            stage.writeBytes(bytes)
+            installBinary(stage, opengrepFile())
+        } finally {
+            stage.delete()
+        }
+        onProgress(1f)
+        return opengrepFile().absolutePath
+    }
+
     private fun installBinary(source: File, target: File) {
         toolsDir.mkdirs()
         source.copyTo(target, overwrite = true)
         makeExecutable(target)
         clearQuarantine(target)
-    }
-
-    // -- Bandit / Checkov (pip --target isolé) ---------------------------------
-
-    private fun installViaPip(tool: ToolName, onProgress: (Float) -> Unit): String {
-        val pkg = ManagedTools.PIP_TOOLS.getValue(tool)
-        val python = locator(ManagedTools.SEMGREP_MIN_PYTHON)
-            ?: throw IllegalStateException("python3 introuvable — installez Python 3.9+ (ou `pipx install $pkg`)")
-        onProgress(-1f)
-        val targetDir = pipLibsDir(tool)
-        if (targetDir.exists()) targetDir.deleteRecursively()
-        targetDir.mkdirs()
-        val process = ProcessBuilder(
-            python, "-m", "pip", "install", "--quiet", "--upgrade", "--target", targetDir.absolutePath, pkg,
-        ).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        val code = process.waitFor()
-        if (code != 0) throw IllegalStateException("pip install $pkg a échoué (code $code) : ${output.takeLast(2000)}")
-        val script = pipScriptFile(tool)
-        if (!script.isFile) throw IllegalStateException("$pkg installé mais script introuvable : $script")
-        makeExecutable(script)
-        onProgress(1f)
-        return script.absolutePath
     }
 
     private fun verifyChecksum(asset: String, bytes: ByteArray, checksumsUrl: String = ManagedTools.gitleaksChecksumsUrl()) {
@@ -249,42 +227,6 @@ class JvmToolInstaller(
         require(actual.equals(expected, ignoreCase = true)) {
             "checksum invalide pour $asset (corrompu ou compromis) — abandon"
         }
-    }
-
-    // -- Semgrep (pip) ------------------------------------------------------
-
-    private fun installSemgrepViaPip(onProgress: (Float) -> Unit): String {
-        val python = locator(ManagedTools.SEMGREP_MIN_PYTHON)
-            ?: throw IllegalStateException(
-                "python3 introuvable — installez Python 3.9+ puis relancez " +
-                    "(ou `brew install semgrep` / `pip install semgrep`)",
-            )
-        onProgress(-1f)
-        val targetDir = semgrepLibsDir()
-        // Rend l'installation idempotente : `pip install --target` échoue avec
-        // FileExistsError (ex. `wcmatch-*.dist-info` déjà présent) si on relance
-        // Download après un install partiel/ancien. On purge donc la cible avant.
-        // (Visible aussi avec Python 3.14 où shutil._copytree est plus strict.)
-        if (targetDir.exists()) {
-            targetDir.deleteRecursively()
-        }
-        targetDir.mkdirs()
-        val target = targetDir.absolutePath
-        val process = ProcessBuilder(
-            python, "-m", "pip", "install", "--quiet", "--upgrade", "--target", target, ManagedTools.SEMGREP_PIP_PACKAGE,
-        ).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        val code = process.waitFor()
-        if (code != 0) {
-            throw IllegalStateException("pip install semgrep a échoué (code $code) : ${output.takeLast(2000)}")
-        }
-        val script = semgrepFile()
-        if (!script.isFile) throw IllegalStateException("semgrep installé mais script introuvable : $script")
-        makeExecutable(script)
-        // Le wrapper OCaml `pysemgrep` (execvp) doit aussi être exécutable.
-        script.parentFile?.resolve(ManagedTools.semgrepCoreBinaryName())?.takeIf { it.isFile }?.let(::makeExecutable)
-        onProgress(1f)
-        return script.absolutePath
     }
 
     // -- Primitives ---------------------------------------------------------

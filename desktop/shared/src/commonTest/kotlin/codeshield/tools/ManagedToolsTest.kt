@@ -36,14 +36,27 @@ class ManagedToolsTest {
         assertEquals("gitleaks", ManagedTools.gitleaksBinaryName(OsKind.MACOS))
         assertEquals("gitleaks", ManagedTools.gitleaksBinaryName(OsKind.LINUX))
         assertEquals("gitleaks.exe", ManagedTools.gitleaksBinaryName(OsKind.WINDOWS))
-        assertEquals("semgrep", ManagedTools.semgrepBinaryName(OsKind.LINUX))
-        assertEquals("semgrep.exe", ManagedTools.semgrepBinaryName(OsKind.WINDOWS))
+        assertEquals("opengrep", ManagedTools.opengrepBinaryName(OsKind.LINUX))
+        assertEquals("opengrep.exe", ManagedTools.opengrepBinaryName(OsKind.WINDOWS))
     }
 
     @Test
-    fun pipLayoutFollowsPipTargetConvention() {
-        assertEquals("/t/bin", ManagedTools.pipScriptDir("/t", OsKind.MACOS))
-        assertEquals("/t/bin", ManagedTools.pipScriptDir("/t", OsKind.LINUX))
-        assertEquals("C:/t/Scripts", ManagedTools.pipScriptDir("C:/t", OsKind.WINDOWS))
+    fun opengrepAssetsMatchPublishedReleaseAndArePinned() {
+        // Noms vérifiés contre les assets de la release v1.30.1.
+        val assets = listOf(
+            ManagedTools.opengrepAsset(OsKind.MACOS, Arch.ARM64) to "opengrep_osx_arm64",
+            ManagedTools.opengrepAsset(OsKind.MACOS, Arch.X64) to "opengrep_osx_x86",
+            ManagedTools.opengrepAsset(OsKind.LINUX, Arch.ARM64) to "opengrep_manylinux_aarch64",
+            ManagedTools.opengrepAsset(OsKind.LINUX, Arch.X64) to "opengrep_manylinux_x86",
+            ManagedTools.opengrepAsset(OsKind.WINDOWS, Arch.X64) to "opengrep_windows_x86.exe",
+            ManagedTools.opengrepAsset(OsKind.WINDOWS, Arch.ARM64) to "opengrep_windows_x86.exe",
+        )
+        for ((actual, expected) in assets) {
+            assertEquals(expected, actual)
+            // Chaque asset installable a une empreinte SHA-256 épinglée (64 hex).
+            assertTrue(ManagedTools.OPENGREP_SHA256[actual]?.matches(Regex("[0-9a-f]{64}")) == true, actual)
+        }
+        val url = ManagedTools.opengrepUrl("opengrep_osx_arm64")
+        assertEquals("https://github.com/opengrep/opengrep/releases/download/v1.30.1/opengrep_osx_arm64", url)
     }
 }

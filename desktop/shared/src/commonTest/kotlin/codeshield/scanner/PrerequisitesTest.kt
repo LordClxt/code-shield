@@ -7,9 +7,17 @@ class PrerequisitesTest {
 
     @Test
     fun everyKnownBinaryHasAnInstallHint() {
-        for (binary in listOf("semgrep", "gitleaks", "dependency-check.sh")) {
-            val hint = Prerequisites.hintFor(binary)
-            assertTrue(hint.contains("brew"), "hint for $binary should mention brew: $hint")
+        for (engine in ScannerEngines.all) {
+            val hint = Prerequisites.hintFor(engine.binary)
+            assertTrue(hint == engine.installHint && hint.isNotBlank(), "hint for ${engine.binary}: $hint")
+        }
+    }
+
+    @Test
+    fun noInstallHintRequiresPythonForDefaultEngines() {
+        // Les moteurs actifs par défaut s'installent sans Python ni pip.
+        for (engine in ScannerEngines.all.filter { it.defaultEnabled }) {
+            assertTrue("pip" !in engine.installHint, "${engine.label}: ${engine.installHint}")
         }
     }
 

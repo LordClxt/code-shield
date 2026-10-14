@@ -21,6 +21,37 @@ class EngineParsersTest {
     }
 
     @Test
+    fun opengrepOutputParsesLikeSemgrepWithoutLeakingCode() {
+        // Sortie réelle d'Opengrep 1.30.1 (`scan --config p/default --json`), métadonnées réduites.
+        val raw = """
+        {"version": "1.30.1", "results": [{
+          "check_id": "python.lang.security.audit.formatted-sql-query.formatted-sql-query",
+          "path": "app/users.py",
+          "start": {"line": 3, "col": 12, "offset": 66}, "end": {"line": 3, "col": 63, "offset": 117},
+          "extra": {"metavars": {},
+            "message": "Detected possible formatted SQL query. Use parameterized queries instead.",
+            "metadata": {"cwe": ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"],
+              "owasp": ["A01:2017 - Injection", "A03:2021 - Injection", "A05:2025 - Injection"],
+              "category": "security", "confidence": "LOW"},
+            "severity": "WARNING",
+            "fingerprint": "c50d6d48cf432dbeb5543636cd8ff981576e8c0f04a4661519f7f3c11b7209901092cd77a9489744b59a16bacca7d0cb18fbb9dd5c6ce4b193c57a6eba040357_0",
+            "lines": "    return db.execute(f\"SELECT * FROM users WHERE name='{q}'\")",
+            "is_ignored": false, "validation_state": "NO_VALIDATOR", "engine_kind": "OSS"}}],
+         "errors": [], "paths": {"scanned": ["app/users.py"]}, "skipped_rules": [], "interfile_languages_used": []}
+        """.trimIndent()
+        val f = parseSemgrepResults(raw, "/proj").single()
+        assertEquals(ToolName.SEMGREP, f.tool)
+        assertEquals("python.lang.security.audit.formatted-sql-query.formatted-sql-query", f.ruleId)
+        assertEquals("app/users.py", f.filePath)
+        assertEquals(3, f.lineNumber)
+        assertEquals(12, f.column)
+        assertEquals(listOf("CWE-89"), f.cwe)
+        // Ni le texte de la ligne, ni l'empreinte du moteur : l'empreinte est calculée localement.
+        assertFalse(f.toString().contains("SELECT * FROM users"))
+        assertNull(f.fingerprint)
+    }
+
+    @Test
     fun semgrepExtractsRangeColumnsCweAndOwasp() {
         val raw = """
         {"results": [{

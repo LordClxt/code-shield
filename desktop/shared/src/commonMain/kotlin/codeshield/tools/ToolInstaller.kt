@@ -20,9 +20,17 @@ data class ToolStatus(
     val progress: Float? = null,
     val error: String? = null,
 ) {
-    /** L'auto-installation est proposée pour tous les moteurs sauf Dependency-Check (JVM + base NVD). */
+    /**
+     * Auto-installation proposée pour les moteurs publiés en binaire autonome.
+     * Exclus : Dependency-Check (JVM + base NVD), Bandit et Checkov (paquets Python,
+     * utilisés seulement s'ils sont déjà installés).
+     */
     val autoInstallable: Boolean
-        get() = tool != ToolName.DEPENDENCY_CHECK
+        get() = tool !in MANUAL_ONLY
+
+    companion object {
+        val MANUAL_ONLY = setOf(ToolName.DEPENDENCY_CHECK, ToolName.BANDIT, ToolName.CHECKOV)
+    }
 }
 
 /**

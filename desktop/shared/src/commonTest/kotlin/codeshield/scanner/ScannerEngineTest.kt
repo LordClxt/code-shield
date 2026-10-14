@@ -31,18 +31,32 @@ class ScannerEngineTest {
     }
 
     @Test
-    fun semgrepDisablesMetricsAndUsesConfig() {
-        val cmd = SemgrepEngine.command("semgrep", "/w", EngineOptions(semgrepConfig = "p/owasp-top-ten"))
-        assertTrue("--metrics=off" in cmd)
+    fun opengrepUsesConfigWithoutMetricsFlag() {
+        val cmd = OpengrepEngine.command("opengrep", "/w", EngineOptions(semgrepConfig = "p/owasp-top-ten"))
+        // Opengrep n'a pas d'option --metrics : la passer le ferait échouer (code 2).
+        assertTrue(cmd.none { it.startsWith("--metrics") })
         assertTrue("p/owasp-top-ten" in cmd)
         assertTrue("--json" in cmd)
     }
 
     @Test
-    fun semgrepNeverUsesAutoConfigWithMetricsOff() {
-        // `--config auto` + `--metrics=off` → semgrep sort en code 2.
+    fun opengrepKeepsSemgrepIdentityInContract() {
+        // Même outil côté contrat : les failles déjà synchronisées gardent leur identité.
+        assertEquals(ToolName.SEMGREP, OpengrepEngine.tool)
+        assertEquals("opengrep", OpengrepEngine.binary)
+    }
+
+    @Test
+    fun pythonEnginesAreOptIn() {
+        assertFalse(BanditEngine.defaultEnabled)
+        assertFalse(CheckovEngine.defaultEnabled)
+        assertTrue(ScannerEngines.defaultEnabled.containsAll(setOf(ToolName.SEMGREP, ToolName.GITLEAKS, ToolName.TRIVY)))
+    }
+
+    @Test
+    fun opengrepNeverUsesAutoConfig() {
         for (opts in listOf(EngineOptions(), EngineOptions(semgrepConfig = "auto"))) {
-            val cmd = SemgrepEngine.command("semgrep", "/w", opts)
+            val cmd = OpengrepEngine.command("opengrep", "/w", opts)
             assertTrue("auto" !in cmd)
             assertTrue(DEFAULT_SEMGREP_CONFIG in cmd)
         }
@@ -50,8 +64,8 @@ class ScannerEngineTest {
 
     @Test
     fun exitCodesFollowEachToolConvention() {
-        assertTrue(SemgrepEngine.isExpectedExit(1))
-        assertFalse(SemgrepEngine.isExpectedExit(2))
+        assertTrue(OpengrepEngine.isExpectedExit(1))
+        assertFalse(OpengrepEngine.isExpectedExit(2))
         assertTrue(OsvScannerEngine.isExpectedExit(128))
         assertFalse(DependencyCheckEngine.isExpectedExit(1))
     }

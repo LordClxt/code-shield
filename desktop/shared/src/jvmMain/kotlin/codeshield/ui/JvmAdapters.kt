@@ -8,7 +8,7 @@ import java.io.File
 
 /** Adapte ProcessRunner (JVM) au contrat CommandRunner du ViewModel commun. */
 val JvmCommandRunner: CommandRunner = { command, workDir ->
-    ProcessRunner.runStreaming(command, workDir, managedEnvFor(command)).map { it.toTerminalLine(command) }
+    ProcessRunner.runStreaming(command, workDir).map { it.toTerminalLine(command) }
 }
 
 /** Idem avec une entrée standard (consigne de Claude Code, jamais en argument). */
@@ -119,28 +119,6 @@ private fun whichBinary(binary: String): String? =
 /** Vérifie l'existence d'un dossier projet (pré-vol du scan). */
 val JvmDirChecker: DirChecker = { dir ->
     runCatching { File(dir).isDirectory }.getOrDefault(false)
-}
-
-/**
- * Environnement pour les installs gérées `pip --target` (semgrep) :
- * - `bin/semgrep` a besoin de `PYTHONPATH=<target>` (sinon `No module named 'semgrep'`)
- * - le wrapper OCaml fait `execvp pysemgrep` -> `PATH` doit contenir `<target>/bin`
- *   (sinon `Unix_error: No such file or directory execvp pysemgrep`).
- * Sans ça, l'install `--target` est inutilisable alors que `semgrep --version` système marche.
- */
-internal fun managedEnvFor(command: List<String>): Map<String, String> {
-    val bin = command.firstOrNull().orEmpty()
-    // semgrep-pylibs, bandit-pylibs, checkov-pylibs : même layout `pip --target`.
-    if (!bin.contains("-pylibs")) return emptyMap()
-    val binDir = runCatching { File(bin).parentFile }.getOrNull() ?: return emptyMap()
-    val libsDir = binDir.parentFile ?: return emptyMap()
-    val prevPythonPath = System.getenv("PYTHONPATH").orEmpty()
-    val pythonPath = if (prevPythonPath.isBlank()) libsDir.absolutePath
-    else libsDir.absolutePath + File.pathSeparator + prevPythonPath
-    val prevPath = System.getenv("PATH").orEmpty()
-    val path = if (prevPath.isBlank()) binDir.absolutePath
-    else binDir.absolutePath + File.pathSeparator + prevPath
-    return mapOf("PYTHONPATH" to pythonPath, "PATH" to path)
 }
 
 /**

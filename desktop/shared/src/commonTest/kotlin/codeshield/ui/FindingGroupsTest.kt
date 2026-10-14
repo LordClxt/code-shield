@@ -48,7 +48,7 @@ class FindingGroupsTest {
             finding("c.py", ToolName.GITLEAKS),
         )
         val groups = groupFindings(findings, GroupTab.TOOLS)
-        assertEquals(listOf("Gitleaks", "Semgrep"), groups.map { it.title })
+        assertEquals(listOf("Gitleaks", "Opengrep"), groups.map { it.title })
         assertEquals(listOf(ToolName.GITLEAKS), groups[0].tools)
     }
 

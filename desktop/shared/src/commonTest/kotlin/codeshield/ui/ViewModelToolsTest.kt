@@ -49,7 +49,7 @@ class ViewModelToolsTest {
     @Test
     fun refreshToolsMarksManagedAndSystemBinariesReady() = runTest {
         val installer = FakeInstaller(installed = mutableMapOf(ToolName.GITLEAKS to "/managed/gitleaks"))
-        val vm = vmWith(installer, locator = { if (it == "semgrep") "/usr/bin/semgrep" else null })
+        val vm = vmWith(installer, locator = { if (it == "opengrep") "/usr/bin/opengrep" else null })
         vm.refreshTools()
         advanceUntilIdle()
         val statuses = vm.state.value.toolStatuses
@@ -85,10 +85,10 @@ class ViewModelToolsTest {
 
     @Test
     fun managedBinaryIsPreferredOverSystemOne() = runTest {
-        val installer = FakeInstaller(installed = mutableMapOf(ToolName.SEMGREP to "/managed/semgrep"))
-        val vm = vmWith(installer, locator = { "/usr/bin/semgrep" })
+        val installer = FakeInstaller(installed = mutableMapOf(ToolName.SEMGREP to "/managed/opengrep"))
+        val vm = vmWith(installer, locator = { "/usr/bin/opengrep" })
         vm.refreshTools()
         advanceUntilIdle()
-        assertEquals("/managed/semgrep", vm.state.value.toolStatuses[ToolName.SEMGREP]?.path)
+        assertEquals("/managed/opengrep", vm.state.value.toolStatuses[ToolName.SEMGREP]?.path)
     }
 }

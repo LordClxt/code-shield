@@ -36,9 +36,15 @@ fun main() {
         System.setProperty("apple.awt.fullWindowContent", "true")
     }
 
-    // Icône de fenêtre / Dock (le d-bouclier), embarquée dans les ressources.
-    val appIcon = Thread.currentThread().contextClassLoader.getResourceAsStream("icon.png")
-        ?.use { BitmapPainter(ImageIO.read(it).toComposeImageBitmap()) }
+    // Icône de l'app (le d-bouclier), embarquée dans les ressources.
+    val iconImage = Thread.currentThread().contextClassLoader.getResourceAsStream("icon.png")?.use { ImageIO.read(it) }
+    val appIcon = iconImage?.let { BitmapPainter(it.toComposeImageBitmap()) }
+    // Dock macOS / barre des tâches : `Window(icon)` ne les change pas quand l'app tourne hors
+    // installeur (`./gradlew run`, IDE) ; l'app installée prend déjà l'icône du bundle (.icns).
+    if (iconImage != null && java.awt.Taskbar.isTaskbarSupported()) {
+        val taskbar = java.awt.Taskbar.getTaskbar()
+        if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) runCatching { taskbar.iconImage = iconImage }
+    }
 
     application {
         val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)

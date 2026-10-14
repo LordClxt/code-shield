@@ -43,7 +43,7 @@ fun groupFindings(findings: List<Finding>, tab: GroupTab): List<FindingGroup> {
 }
 
 private fun toolLabel(toolName: String): String = when (toolName) {
-    ToolName.SEMGREP.name -> "Semgrep"
+    ToolName.SEMGREP.name -> "Opengrep"
     ToolName.GITLEAKS.name -> "Gitleaks"
     ToolName.DEPENDENCY_CHECK.name -> "Dependency-Check"
     else -> toolName
