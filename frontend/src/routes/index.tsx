@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { MotionConfig, motion, type MotionStyle } from 'motion/react'
 import { useRef, type PointerEvent, type ReactNode } from 'react'
+import { GITHUB_URL, GithubIcon } from '@/components/brand'
 import { Logo } from '@/components/domain'
 import { Film } from '@/components/landing/film'
 import {
@@ -109,14 +110,18 @@ function LandingPage() {
           <Link to="/" aria-label="CodeShield, accueil">
             <Logo />
           </Link>
-          <nav className="ml-4 hidden items-center gap-1 text-[14px] text-fog lg:flex" aria-label="Navigation principale">
+          <nav className="ml-4 hidden items-center gap-1 text-[14px] text-fog xl:flex" aria-label="Navigation principale">
             {NAV.map((n) => (
-              <a key={n.href} href={n.href} className="rounded-full px-3 py-1.5 transition-colors hover:bg-white/5 hover:text-paper">
+              <a key={n.href} href={n.href} className="rounded-full px-3 py-1.5 whitespace-nowrap transition-colors hover:bg-white/5 hover:text-paper">
                 {n.label}
               </a>
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="lp-btn-ghost lp-sm gap-2" aria-label="Code source sur GitHub">
+              <GithubIcon className="size-4" />
+              <span className="hidden sm:inline">GitHub</span>
+            </a>
             <a href="#telecharger" className="lp-btn lp-sm">
               Télécharger
             </a>
@@ -272,10 +277,18 @@ function LandingPage() {
 
         <section className="grid scroll-mt-8 gap-12 pb-28" aria-labelledby="telecharger">
           <SectionTitle pill="Télécharger" id="telecharger" title="Installez CodeShield sur votre poste.">
-            Gratuit, sans compte : l’app tourne entièrement sur votre machine.
+            Gratuit, open source et sans compte : l’app tourne entièrement sur votre machine.
           </SectionTitle>
           <DownloadCards />
           <InstallSteps />
+          <p className="text-center text-[14.5px] text-fog">
+            Le code source est ouvert : lisez-le, compilez-le vous-même ou contribuez{' '}
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-paper underline-offset-4 hover:underline">
+              <GithubIcon className="size-3.5" />
+              sur GitHub
+            </a>
+            .
+          </p>
         </section>
 
         <section className="grid gap-12 pb-28" aria-labelledby="questions">
@@ -317,9 +330,15 @@ function LandingPage() {
             <p className="max-w-sm text-[20px] leading-snug font-medium tracking-[-0.02em] text-white">
               L’audit de sécurité du code source, sur votre machine.
             </p>
-            <a href="#telecharger" className="lp-btn-ghost lp-sm bg-night/40">
-              Télécharger
-            </a>
+            <div className="flex gap-2">
+              <a href="#telecharger" className="lp-btn-ghost lp-sm bg-night/40">
+                Télécharger
+              </a>
+              <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="lp-btn-ghost lp-sm gap-2 bg-night/40">
+                <GithubIcon className="size-4" />
+                GitHub
+              </a>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-12 text-[14px]">
             <div className="grid content-start gap-2.5">
@@ -331,7 +350,8 @@ function LandingPage() {
             </div>
             <div className="grid content-start gap-2.5">
               <p className="font-medium text-white">Développeurs</p>
-              <a href="#telecharger" className="text-paper/75 hover:text-white">Télécharger</a>
+              <a href={GITHUB_URL} className="text-paper/75 hover:text-white">Code source (GitHub)</a>
+              <a href={`${GITHUB_URL}/releases`} className="text-paper/75 hover:text-white">Versions</a>
               <a href="#claude-code" className="text-paper/75 hover:text-white">Claude Code</a>
               <a href="https://claude.com/claude-code" className="text-paper/75 hover:text-white">Installer Claude Code</a>
             </div>

@@ -490,6 +490,10 @@ const FAQ: [string, string][] = [
     'Relancez le scan depuis l’app : si la faille a disparu, elle est résolue. Relisez aussi les changements dans votre éditeur ou avec git avant de les valider.',
   ],
   [
+    'CodeShield est-il open source ?',
+    'Oui. Tout le code (app desktop, site, API) est public sur GitHub : github.com/LordClxt/code-shield. Vous pouvez le lire, compiler l’app vous-même et proposer des améliorations.',
+  ],
+  [
     'Sur quels systèmes fonctionne l’app ?',
     'macOS (.dmg), Windows (.msi) et Linux (.deb). Claude Code est optionnel : sans lui, l’app scanne et explique les failles.',
   ],
