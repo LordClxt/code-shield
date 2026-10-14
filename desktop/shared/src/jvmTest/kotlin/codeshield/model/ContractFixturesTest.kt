@@ -56,6 +56,7 @@ class ContractFixturesTest {
     @Test
     fun everyKotlinEnumValueExistsInTheOpenApiContract() {
         val spec = listOf("../../contracts/openapi.yaml", "../contracts/openapi.yaml").map(::File).first { it.isFile }.readText()
+            .replace("\r\n", "\n") // checkout Windows (CRLF)
         fun enumLine(schema: String) = spec.substringAfter("    $schema:\n").substringAfter("enum: [").substringBefore("]")
         assertEquals(ToolName.entries.map { it.name }, enumLine("ToolName").split(", "))
         assertEquals(Severity.entries.map { it.name }, enumLine("Severity").split(", "))

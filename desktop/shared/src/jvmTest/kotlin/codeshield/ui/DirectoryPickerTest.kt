@@ -1,6 +1,7 @@
 package codeshield.ui
 
 import java.nio.file.Files
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -19,8 +20,8 @@ class DirectoryPickerTest {
 
     @Test
     fun blankInputFallsBackToHome() {
-        assertEquals("/fake/home", resolveStartDirectory("", "/fake/home").path)
-        assertEquals("/fake/home", resolveStartDirectory("   ", "/fake/home").path)
+        assertEquals(File("/fake/home").path, resolveStartDirectory("", "/fake/home").path)
+        assertEquals(File("/fake/home").path, resolveStartDirectory("   ", "/fake/home").path)
     }
 
     @Test
@@ -33,7 +34,7 @@ class DirectoryPickerTest {
     fun filePathFallsBackToHome() {
         val file = Files.createTempFile("codeshield-pick", ".tmp").toFile()
         try {
-            assertEquals("/fake/home", resolveStartDirectory(file.absolutePath, "/fake/home").path)
+            assertEquals(File("/fake/home").path, resolveStartDirectory(file.absolutePath, "/fake/home").path)
         } finally {
             file.delete()
         }

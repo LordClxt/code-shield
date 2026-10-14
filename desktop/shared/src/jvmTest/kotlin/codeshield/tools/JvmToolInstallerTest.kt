@@ -33,7 +33,8 @@ class JvmToolInstallerTest {
     fun presentBinaryIsDetectedAsInstalled() {
         val (installer, dir) = installerInTemp()
         try {
-            val fake = dir.resolve("gitleaks").apply { writeText("#!/bin/sh\necho hi\n") }
+            val name = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "gitleaks.exe" else "gitleaks"
+            val fake = dir.resolve(name).apply { writeText("#!/bin/sh\necho hi\n") }
             assertEquals(fake.absolutePath, installer.installedPath(ToolName.GITLEAKS))
         } finally {
             dir.deleteRecursively()
